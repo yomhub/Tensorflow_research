@@ -8,9 +8,9 @@ def all2list(myvar,listlen=None):
     return [myvar] * tlen
   elif(type(myvar)==list or type(myvar)==tuple):
     myvar=list(myvar)
-    if(listlen==None):
+    if(len(myvar)==tlen):
       return myvar
-    elif(len(myvar)==tlen):
+    elif(listlen==None):
       return myvar
     elif(len(myvar)<tlen):
       myvar.extend([myvar[-1]]*(tlen-len(myvar)))

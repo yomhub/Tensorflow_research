@@ -13,13 +13,24 @@ def anchor_target_layer_tf(all_anchors, gt_boxes, im_info, settings):
       where 4 is [xstart, ystart, w, h]
     im_info: [height，width]
     settings:{
-      "neg_ovlp" : neg_ovlp,
-      "pos_ovlp" : pos_ovlp,
+      "RPN_NEGATIVE_OVERLAP" : RPN_NEGATIVE_OVERLAP,
+      "RPN_POSITIVE_OVERLAP" : RPN_POSITIVE_OVERLAP,
+        negative / positive overlap threshold
       "RPN_CLOBBER_POSITIVES" : RPN_CLOBBER_POSITIVES,
+        If an anchor satisfied by positive and 
+        negative conditions set to negative
       "RPN_BATCHSIZE" : RPN_BATCHSIZE,
+        Total number of examples
       "RPN_FG_FRACTION" : RPN_FG_FRACTION,
-      "RPN_BBOX_INSIDE_WEIGHTS" : all2list(RPN_BBOX_INSIDE_WEIGHTS,4),
+        Max percentage of foreground examples
+      "RPN_BBOX_INSIDE_WEIGHTS" : RPN_BBOX_INSIDE_WEIGHTS,
+        Deprecated (outside weights)
       "RPN_POSITIVE_WEIGHT", RPN_POSITIVE_WEIGHT
+        Give the positive RPN examples weight 
+        of p * 1 / {num positives}
+        and give negatives a weight of (1 - p)
+        Set to -1.0 to use uniform example weighting
+      ...
     }
   Return:
     Tensors
@@ -78,12 +89,12 @@ def anchor_target_layer_tf(all_anchors, gt_boxes, im_info, settings):
   if not settings["RPN_CLOBBER_POSITIVES"]:
     # assign bg labels first so that positive labels can clobber them
     # first set the negatives
-    labels[max_overlaps.numpy() < settings["neg_ovlp"]] = 0
+    labels[max_overlaps.numpy() < settings["RPN_NEGATIVE_OVERLAP"]] = 0
   labels[gt_argmax_overlaps.numpy()] = 1
-  labels[max_overlaps.numpy()>settings["pos_ovlp"]] = 1
+  labels[max_overlaps.numpy()>settings["RPN_POSITIVE_OVERLAP"]] = 1
   if settings["RPN_CLOBBER_POSITIVES"]:
     # assign bg labels last so that negative labels can clobber positives
-    labels[max_overlaps.numpy() < settings["neg_ovlp"]] = 0
+    labels[max_overlaps.numpy() < settings["RPN_NEGATIVE_OVERLAP"]] = 0
 
   # subsample positive labels if we have too many
   num_fg = int(settings["RPN_FG_FRACTION"] * settings["RPN_BATCHSIZE"])

@@ -1,8 +1,10 @@
 # vgg16: Release
 # resnet: wait
 # roi layer: Alpha
-# roi loss function: current building
-# global loss function: wait
+# roi loss function: alpha
+# rcnn loss function: current building
+# proposal_target_layer_tf: current building
+# global loss function: alpha
 
 import os, sys
 import tensorflow as tf
@@ -14,6 +16,7 @@ from layer_utils.snippets import generate_anchors_pre, generate_anchors_pre_tf
 from layer_utils.proposal_top_layer import proposal_top_layer, proposal_top_layer_tf
 # from layer_utils.anchor_target_layer import anchor_target_layer
 from model.bbox_transform import bbox_transform_inv, clip_boxes, bbox_transform_inv_tf, clip_boxes_tf
+from model.config import cfg
 from tflib.anchor_target_layer import anchor_target_layer_tf
 from tflib.proposal_target_layer import proposal_target_layer_tf
 from tflib.common import *
@@ -426,39 +429,7 @@ class Faster_RCNN(tf.keras.Model):
 class RCNNLoss(tf.keras.losses.Loss):
   """
   Args:
-    neg_ovlp: negative overlap threshold
-    pos_ovlp: positive overlap threshold
-    RPN_CLOBBER_POSITIVES:
-      If an anchor satisfied by positive and 
-      negative conditions set to negative
-    RPN_BATCHSIZE:
-      Total number of examples
-    RPN_FG_FRACTION:
-      Max percentage of foreground examples
-    RPN_BBOX_INSIDE_WEIGHTS:
-      Deprecated (outside weights)
-    RPN_POSITIVE_WEIGHT:
-      Give the positive RPN examples weight 
-      of p * 1 / {num positives}
-      and give negatives a weight of (1 - p)
-      Set to -1.0 to use uniform example weighting
-    # RPN_PRE_NMS_TOP_N:
-    #   Number of top scoring boxes to 
-    #   keep before apply NMS to RPN proposals
-    # RPN_POST_NMS_TOP_N:
-    #   Number of top scoring boxes to 
-    #   keep after applying NMS to RPN proposals
-    # RPN_NMS_THRESH:
-    #   NMS threshold used on RPN proposals
-    USE_GT:
-      Whether to add ground truth boxes to 
-      the pool when sampling regions
-    BATCH_SIZE:
-      Minibatch size 
-      (number of regions of interest [ROIs])
-    FG_FRACTION:
-      Fraction of minibatch that is 
-      labeled foreground (i.e. class > 0)
+    sigma_rpn: sigma in RPN bbox loss
   Inputs: dictionary format
     y_true: {
       "img_sz": List of [height，width],
@@ -472,37 +443,11 @@ class RCNNLoss(tf.keras.losses.Loss):
     }
 
   """
-  def __init__(self,
-    sigma_rpn=3.0,
-    neg_ovlp=0.5,
-    pos_ovlp=0.5,
-    RPN_CLOBBER_POSITIVES=False,
-    RPN_BATCHSIZE=256,
-    RPN_FG_FRACTION=0.5,
-    RPN_BBOX_INSIDE_WEIGHTS=[1.0,1.0,1.0,1.0],
-    RPN_POSITIVE_WEIGHT=-1.0,
-    # RPN_PRE_NMS_TOP_N=6000,
-    # RPN_POST_NMS_TOP_N=300,
-    # RPN_NMS_THRESH=0.7,
-    USE_GT=False,
-    BATCH_SIZE=128,
-    FG_FRACTION=0.25
-    ):    
-
-    self.settings={
-      "neg_ovlp" : neg_ovlp,
-      "pos_ovlp" : pos_ovlp,
-      "RPN_CLOBBER_POSITIVES" : RPN_CLOBBER_POSITIVES,
-      "RPN_BATCHSIZE" : RPN_BATCHSIZE,
-      "RPN_FG_FRACTION" : RPN_FG_FRACTION,
-      "RPN_BBOX_INSIDE_WEIGHTS" : all2list(RPN_BBOX_INSIDE_WEIGHTS,4),
-      # "RPN_POSITIVE_WEIGHT" : RPN_POSITIVE_WEIGHT,
-      # "RPN_PRE_NMS_TOP_N" : RPN_PRE_NMS_TOP_N,
-      # "RPN_NMS_THRESH" : RPN_NMS_THRESH,
-      "USE_GT" : USE_GT,
-      "BATCH_SIZE" : BATCH_SIZE,
-      "FG_FRACTION" : FG_FRACTION,
-    }
+  def __init__(self, cfg, cfg_name, sigma_rpn=3.0):    
+    try:
+      self.cfg=cfg[cfg_name]
+    except:
+      self.cfg=cfg['TRAIN']
     self.sigma_rpn=sigma_rpn
     self._losses={}
     super(RCNNLoss, self).__init__()
@@ -566,7 +511,7 @@ class RCNNLoss(tf.keras.losses.Loss):
     """
 
     rpn_labels, rpn_bbox_targets, rpn_bbox_inside_weights, rpn_bbox_outside_weights \
-     = anchor_target_layer_tf(y_pred["rpn_bbox_pred"], y_true["gt_bbox"][:,:5], y_true["img_sz"], self.settings)
+     = anchor_target_layer_tf(y_pred["rpn_bbox_pred"], y_true["gt_bbox"][:,:5], y_true["img_sz"], self.cfg)
 
     # RPN, class loss
     rpn_select = tf.where(tf.not_equal(rpn_labels, -1))
@@ -586,7 +531,7 @@ class RCNNLoss(tf.keras.losses.Loss):
     )
 
     rois, roi_scores, labels, bbox_targets, bbox_inside_weights, bbox_outside_weights \
-      = proposal_target_layer_tf()
+      = proposal_target_layer_tf(rpn_rois, rpn_scores, gt_boxes, _num_classes, self.cfg)
 
     # RCNN, class loss
     cls_score = y_pred["cls_score"]
@@ -633,7 +578,7 @@ if __name__ == "__main__":
     "rpn_scores": tf.Variable([[0.1],[0.2],[0.2],[0.5]],dtype=tf.float32),
   }
   t2 = losstest(y_true, y_pred)
-  l3f = Faster_RCNN()
+  l3f = Faster_RCNN(num_classes=2)
   l3f.compile(
     optimizer=tf.keras.optimizers.Adam(),
     loss=RCNNLoss()

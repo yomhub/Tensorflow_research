@@ -1,5 +1,7 @@
+from __future__ import division
 import tensorflow as tf
 import numpy as np
+import numpy.random as npr
 from tflib.bbox_transform import bbox_transform
 from tflib.overlap import overlap_tf
 
@@ -8,9 +10,28 @@ def proposal_target_layer_tf(rpn_rois, rpn_scores, gt_boxes, _num_classes, setti
   Assign object detection proposals to ground-truth targets. Produces proposal
   classification labels and bounding-box regression targets.
   Args:
-
+    settings:{
+      USE_GT:
+        Whether to add ground truth boxes to 
+        the pool when sampling regions
+      BATCH_SIZE:
+        Minibatch size 
+        (number of regions of interest [ROIs])
+      FG_FRACTION:
+        Fraction of minibatch that is 
+        labeled foreground (i.e. class > 0)
+      FG_THRESH:
+        Overlap threshold for a ROI to 
+        be considered foreground (if >= FG_THRESH)
+      BG_THRESH_HI & BG_THRESH_LO:
+        Overlap threshold for a ROI to be considered 
+        background (class = 0 if overlap in [LO, HI))
+      BBOX_NORMALIZE_TARGETS_PRECOMPUTED
+        Normalize the targets using "precomputed" 
+        (or made up) means and stdevs
+    }
     gt_boxes: Tensor with shape (total_gts,5)
-      where 4 is [xstart, ystart, w, h, class]
+      where 5 is [class, tx, ty, tw, th]
   """
   # Proposal ROIs (0, x1, y1, x2, y2) coming from RPN
   # (i.e., rpn.proposal_layer.ProposalLayer), or any other source
@@ -19,22 +40,24 @@ def proposal_target_layer_tf(rpn_rois, rpn_scores, gt_boxes, _num_classes, setti
 
   # Include ground-truth boxes in the set of candidate rois
   if settings["USE_GT"]:
-    zeros = np.zeros((gt_boxes.shape[0], 1), dtype=gt_boxes.dtype)
-    all_rois = np.vstack(
-      (all_rois, np.hstack((zeros, gt_boxes[:, :-1])))
+    zeros = tf.zeros((gt_boxes.shape[0], 1), dtype=gt_boxes.dtype)
+    all_rois = tf.stack(
+      [all_rois, 
+      tf.stack([zeros, gt_boxes[:, :-1]],axis=1)
+      ],
+      axis=0
     )
     # not sure if it a wise appending, but anyway i am not using it
-    all_scores = np.vstack((all_scores, zeros))
+    all_scores = tf.stack([all_scores, zeros],axis=0)
 
-  num_images = 1
-  rois_per_image = settings["BATCH_SIZE"] / num_images
+  rois_per_image = settings["BATCH_SIZE"] 
   fg_rois_per_image = np.round(settings["FG_FRACTION"] * rois_per_image)
 
   # Sample rois with classification labels and bounding box regression
   # targets
   labels, rois, roi_scores, bbox_targets, bbox_inside_weights = _sample_rois(
     all_rois, all_scores, gt_boxes, fg_rois_per_image,
-    rois_per_image, _num_classes)
+    rois_per_image, _num_classes, settings)
 
   rois = rois.reshape(-1, 5)
   roi_scores = roi_scores.reshape(-1)
@@ -46,7 +69,7 @@ def proposal_target_layer_tf(rpn_rois, rpn_scores, gt_boxes, _num_classes, setti
   return rois, roi_scores, labels, bbox_targets, bbox_inside_weights, bbox_outside_weights
 
 
-def _sample_rois(all_rois, all_scores, gt_boxes, fg_rois_per_image, rois_per_image, num_classes):
+def _sample_rois(all_rois, all_scores, gt_boxes, fg_rois_per_image, rois_per_image, num_classes, settings):
   """Generate a random sample of RoIs comprising foreground and background
   examples.
   """
@@ -55,14 +78,14 @@ def _sample_rois(all_rois, all_scores, gt_boxes, fg_rois_per_image, rois_per_ima
   # find maximum in overlaps above gt_boxes
   gt_assignment = tf.argmax(overlaps,axis=1)
   max_overlaps = tf.reduce_max(overlaps,axis=1)
-  labels = tf.gather(gt_boxes,gt_assignment)
+  labels = tf.gather(gt_boxes,gt_assignment).numpy()
 
   # Select foreground RoIs as those with >= FG_THRESH overlap
-  fg_inds = np.where(max_overlaps >= cfg.TRAIN.FG_THRESH)[0]
+  fg_inds = tf.where(max_overlaps >= settings["FG_THRESH"]).numpy()
   # Guard against the case when an image has fewer than fg_rois_per_image
   # Select background RoIs as those within [BG_THRESH_LO, BG_THRESH_HI)
-  bg_inds = np.where((max_overlaps < cfg.TRAIN.BG_THRESH_HI) &
-                     (max_overlaps >= cfg.TRAIN.BG_THRESH_LO))[0]
+  bg_inds = tf.where((max_overlaps < settings["BG_THRESH_HI"]) &
+                     (max_overlaps >= settings["BG_THRESH_LO"])).numpy()
 
   # Small modification to the original version where we ensure a fixed number of regions are sampled
   if fg_inds.size > 0 and bg_inds.size > 0:
@@ -87,15 +110,49 @@ def _sample_rois(all_rois, all_scores, gt_boxes, fg_rois_per_image, rois_per_ima
   keep_inds = np.append(fg_inds, bg_inds)
   # Select sampled values from various arrays:
   labels = labels[keep_inds]
+  ts_keep_inds = tf.convert_to_tensor(keep_inds,dtype=tf.int32)
   # Clamp labels for the background RoIs to 0
   labels[int(fg_rois_per_image):] = 0
-  rois = all_rois[keep_inds]
-  roi_scores = all_scores[keep_inds]
+  rois = tf.gather(all_rois,ts_keep_inds)
+  roi_scores = tf.gather(all_scores,ts_keep_inds)
+  sel_gtb = tf.gather(gt_assignment,ts_keep_inds)
+  sel_gtb = tf.gather(gt_boxes,sel_gtb)
 
-  bbox_target_data = _compute_targets(
-    rois[:, 1:5], gt_boxes[gt_assignment[keep_inds], :4], labels)
+  # Compute bounding-box regression targets for an image.
+  targets = bbox_transform(rois[:, 1:5], sel_gtb[:, :4]).numpy()
+
+  if settings["BBOX_NORMALIZE_TARGETS_PRECOMPUTED"]:
+    # Optionally normalize targets by a precomputed mean and stdev
+    targets = ((targets - np.array(settings["BBOX_NORMALIZE_MEANS"]))
+               / np.array(settings["BBOX_NORMALIZE_STDS"]))
+  bbox_target_data = np.hstack(
+    (labels[:, np.newaxis], targets)).astype(np.float32, copy=False)
 
   bbox_targets, bbox_inside_weights = \
-    _get_bbox_regression_labels(bbox_target_data, num_classes)
+    _get_bbox_regression_labels(bbox_target_data, num_classes, settings)
 
   return labels, rois, roi_scores, bbox_targets, bbox_inside_weights
+
+def _get_bbox_regression_labels(bbox_target_data, num_classes, settings):
+  """Bounding-box regression targets (bbox_target_data) are stored in a
+  compact form N x (class, tx, ty, tw, th)
+
+  This function expands those targets into the 4-of-4*K representation used
+  by the network (i.e. only one class has non-zero targets).
+
+  Returns:
+      bbox_target (ndarray): N x 4K blob of regression targets
+      bbox_inside_weights (ndarray): N x 4K blob of loss weights
+  """
+
+  clss = bbox_target_data[:, 0]
+  bbox_targets = tf.zeros((clss.shape[0], 4 * num_classes), dtype=tf.float32)
+  bbox_inside_weights = np.zeros(bbox_targets.shape, dtype=np.float32)
+  inds = np.where(clss > 0)[0]
+  for ind in inds:
+    scls = clss[ind]
+    start = int(4 * scls)
+    end = start + 4
+    bbox_targets[ind, start:end] = bbox_target_data[ind, 1:]
+    bbox_inside_weights[ind, start:end] = settings["BBOX_INSIDE_WEIGHTS"]
+  return bbox_targets, bbox_inside_weights
