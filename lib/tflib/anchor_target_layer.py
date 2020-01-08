@@ -65,7 +65,7 @@ def anchor_target_layer_tf(all_anchors, gt_boxes, im_info, settings):
   # boxs_inside shape (inside_len,4)
   # gt_boxs shape (total_gts,4)
   # overlaps shape (inside_len,total_gts)
-  overlaps = overlap_tf(boxs_inside,gt_boxes)
+  overlaps = overlap_tf(boxs_inside, gt_boxes)
 
   # just slect the max value
   # of overlaps in axis = (0,1)

@@ -83,7 +83,6 @@ class Faster_RCNN(tf.keras.Model):
     ):
     super(Faster_RCNN, self).__init__()
     # self.name='Faster_RCNN'
-    self._predictions={}
     self.max_outputs_num=int(max_outputs_num)
     self.nms_thresh=float(nms_thresh)
     if(feature_layer_name.lower()=='resnet'):
@@ -154,7 +153,7 @@ class Faster_RCNN(tf.keras.Model):
       ],
       name=self.feature_layer_name
       )
-
+    # For RPN layer
     self.rpn_conv = tf.keras.layers.Conv2D(filters=self.feature_layer_chs,
                             kernel_size=(3, 3),
                             name="rpn_conv/3x3",
@@ -173,23 +172,25 @@ class Faster_RCNN(tf.keras.Model):
                             name="rpn_bbox_pred",
                             )
 
-    # For each RPN output point, caculate 2 class(positive negative)                        
-    self.cls_score_fc = tf.keras.layers.Dense(len(self.anchors)*2,
-                            input_shape=(1,self.rpn_size[0],self.rpn_size[1],len(self.anchors)*2),
-                            name="cls_score_fc"
-                            )
+    # # For each RPN output point, caculate 2 class(positive negative)                        
+    # self.cls_score_fc = tf.keras.layers.Dense(len(self.anchors)*2,
+    #                         input_shape=(1,self.rpn_size[0],self.rpn_size[1],len(self.anchors)*2),
+    #                         name="cls_score_fc"
+    #                         )
 
-    # For each RPN output point, caculate 4 regression value                        
-    self.bbox_regression = tf.keras.layers.Dense(len(self.anchors)*4,
-                            input_shape=(1,self.rpn_size[0],self.rpn_size[1],len(self.anchors)*4),
-                            name="bbox_regression"
-                            )
+    # # For each RPN output point, caculate 4 regression value                        
+    # self.bbox_regression = tf.keras.layers.Dense(len(self.anchors)*4,
+    #                         input_shape=(1,self.rpn_size[0],self.rpn_size[1],len(self.anchors)*4),
+    #                         name="bbox_regression"
+    #                         )
 
-    # Classification: have or not have text
+    # For Classification layer
+    # For each RPN output point, caculate num_classes class (eg: positive negative = 2 class)
     self.cls_layer = tf.keras.layers.Dense(self.num_classes,
                             input_shape=(1,self.cls_in_size[0]*self.cls_in_size[1]*self.feature_layer_chs),
                             name="classification"
                             )
+    # For each RPN output point, caculate 4 regression value
     self.cls_bbox_layer = tf.keras.layers.Dense(self.num_classes*4,
                             input_shape=(1,self.cls_in_size[0]*self.cls_in_size[1]*self.feature_layer_chs),
                             name="classification_bbox"
@@ -215,10 +216,9 @@ class Faster_RCNN(tf.keras.Model):
       im_info: img shape [y,x]
 
     Return:
-      bboxs,scores
-      bboxs: shape(N,4) with [y1, x1, y2, x2] 
-        coordinate in oringinal image
-      scores: shape(N,1)
+      bboxs: shape (self.max_outputs_num,5) with [0, y1, x1, y2, x2] 
+        coordinate in oringinal image and 0 is placeholder
+      scores: shape(self.max_outputs_num,1)
     """
     feat_h = rpn_cls_prob.shape[1]
     feat_w = rpn_cls_prob.shape[2]
@@ -272,18 +272,10 @@ class Faster_RCNN(tf.keras.Model):
       indices=indices,
       axis=0
       )
-      # set all box inside of image
-      # bzeros=tf.zeros_like(bboxs[:,0])
-      # ymax=bzeros+im_info[0]
-      # xmax=bzeros+im_info[1]
-      # filt_bbx=tf.stack(
-      #   [tf.where(bboxs[:,0]<0, bzeros, bboxs[:,0]),
-      #   tf.where(bboxs[:,1]<0, bzeros, bboxs[:,1]),
-      #   tf.where(bboxs[:,2]>im_info[0], ymax, bboxs[:,2]),
-      #   tf.where(bboxs[:,3]>im_info[1], xmax, bboxs[:,3])
-      #   ],
-      #   axis=1
-      # )
+
+    # add class placeholder (0) before bboxs
+    bboxs = tf.pad(bboxs,[[0,0],[1,0]])
+
     return bboxs,scores
 
   def _suit_fc_input(self,target,rpn_size):
@@ -362,6 +354,14 @@ class Faster_RCNN(tf.keras.Model):
     return roi_feat
 
   def _region_proposal(self, feature, in_size):
+    """
+    Return:
+      rois: Tensor with (self.max_outputs_num, 5)
+        where 5 is [0, y1, x1, y2, x2] 
+        coordinate in oringinal image and 0 is placeholder
+      rpn_scores: Tensor with (self.max_outputs_num,1)
+      ...
+    """
     # padding inage with arounded zeros
     # so 3*3 conv will get same shape with feature layer
     rpn_feature = self.rpn_conv(
@@ -382,10 +382,10 @@ class Faster_RCNN(tf.keras.Model):
     # and box shape
     # shape = (1,y,x,4*anchor_num): [dy1, dx1, dy2, dx2]
     # where y1, x1, y2, x2 is diagonal pair of box corners
-    rpn_bbox_pred = self.rpn_bbox_pred(feature)
+    rpn_bbox_pred = self.rpn_bbox_pred(rpn_feature)
     
-    rpn_cls_prob = self.cls_score_fc(rpn_cls_prob)
-    rpn_bbox_pred = self.bbox_regression(rpn_bbox_pred)
+    # rpn_cls_prob = self.cls_score_fc(rpn_cls_prob)
+    # rpn_bbox_pred = self.bbox_regression(rpn_bbox_pred)
 
     # get highest score = (y,x)
     rpn_cls_pred = tf.reshape(
@@ -429,7 +429,8 @@ class Faster_RCNN(tf.keras.Model):
     """
     in_size = inputs.shape[1:3]
     feature = self.feature_model(inputs)
-    rois, rpn_scores, rpn_cls_score, rpn_cls_prob, rpn_cls_pred, rpn_bbox_pred = self._region_proposal(feature,in_size)
+    rois, rpn_scores, rpn_cls_score, rpn_cls_prob, rpn_cls_pred, rpn_bbox_pred \
+     = self._region_proposal(feature,in_size)
     roi_feat = self._crop_pool_layer(rois, in_size, feature)
     cls_score, cls_pred, cls_prob, bbox_pred = self._region_classification(roi_feat)
 
@@ -449,8 +450,9 @@ class RCNNLoss(tf.keras.losses.Loss):
     sigma_rpn: sigma in RPN bbox loss
   Inputs: dictionary format
     y_true: {
-      "img_sz": List of [height，width],
-      "texts": List of [xstart, ystart, w, h, theta],
+      "img_sz": image size [height，width],
+      "texts": Tensor with (N,5) and 5 is 
+        [xstart, ystart, w, h, theta]
     }
 
     y_pred: {
@@ -466,7 +468,7 @@ class RCNNLoss(tf.keras.losses.Loss):
     except:
       self.cfg=cfg['TRAIN']
     self.sigma_rpn=sigma_rpn
-    self._losses={}
+
     super(RCNNLoss, self).__init__()
   
   def _smooth_l1_loss(self, 
@@ -510,7 +512,7 @@ class RCNNLoss(tf.keras.losses.Loss):
       "img_sz": Image information [height，width],
       "gt_bbox": Tensor with shape (total_gts,5)
       "num_classes": int, total num of class
-      where 4 is [xstart, ystart, w, h, class]
+      where 4 is [class, xstart, ystart, w, h]
       where class is class number
     }
     
@@ -529,7 +531,7 @@ class RCNNLoss(tf.keras.losses.Loss):
     """
 
     rpn_labels, rpn_bbox_targets, rpn_bbox_inside_weights, rpn_bbox_outside_weights \
-     = anchor_target_layer_tf(y_pred["rpn_bbox_pred"], y_true["gt_bbox"][:,:5], y_true["img_sz"], self.cfg)
+     = anchor_target_layer_tf(y_pred["rpn_bbox_pred"], y_true["gt_bbox"][:,1:5], y_true["img_sz"], self.cfg)
 
     # RPN, class loss
     rpn_select = tf.where(tf.not_equal(rpn_labels, -1))
@@ -571,11 +573,6 @@ class RCNNLoss(tf.keras.losses.Loss):
       bbox_outside_weights=bbox_outside_weights,
     )
 
-    self._losses['cross_entropy'] = cross_entropy
-    self._losses['loss_box'] = loss_box
-    self._losses['rpn_cross_entropy'] = rpn_cross_entropy
-    self._losses['rpn_loss_box'] = rpn_loss_box
-
     return cross_entropy + loss_box + rpn_cross_entropy + rpn_loss_box
     
 
@@ -587,16 +584,15 @@ if __name__ == "__main__":
   # test=test[:,0:4:2].assign(tf.where(test[:,0:4:2]<0, tf.zeros_like(test[:,0:4:2])+3, test[:,0:4:2]))
   # b=tf.where(test<0,x=test[0],test=0)
   # t2 = tf.gather()
-  # losstest = RCNNLoss(cfg,"TRAIN")
+  losstest = RCNNLoss(cfg,"TRAIN")
   y_true={
     "img_sz":[100,100],
-    "gt_bbox":tf.Variable([[0,1,2,3,0],[-4,-5,-6,-7,0],[0,1,0,1,0]],dtype=tf.float32)
+    "gt_bbox":tf.Variable([[1,0,0,1,1],[1,0,1,2,3],[1,1,2,5,7],[1,10,20,20,30]],dtype=tf.float32)
   }
   y_pred={
     "rois": tf.Variable([[0,0,1,1],[0,1,2,3],[0,1,2,4],[0,1,2,5]],dtype=tf.float32),
     "rpn_scores": tf.Variable([[0.1],[0.2],[0.2],[0.5]],dtype=tf.float32),
   }
-  # t2 = losstest(y_true, y_pred)
   l3f = Faster_RCNN(num_classes=2)
   # l3f.compile(
   #   optimizer=tf.keras.optimizers.Adam(),
@@ -606,5 +602,6 @@ if __name__ == "__main__":
   # t2 -= tests
   # l3f.build((1,1024,1200,3))
   testout = l3f(testraay)
+  t2 = losstest(y_true, testout)
   l3f.feature_model.summary() 
   l3f.summary()
