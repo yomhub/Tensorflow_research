@@ -34,5 +34,5 @@ def bbox_transform(ex_rois, gt_rois):
   targets_dh = tf.math.log(gt_heights / ex_heights)
 
   targets = tf.stack(
-    [targets_dx, targets_dy, targets_dw, targets_dh],0)
+    [targets_dx, targets_dy, targets_dw, targets_dh],1)
   return targets

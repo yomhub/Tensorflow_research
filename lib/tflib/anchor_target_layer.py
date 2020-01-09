@@ -7,7 +7,7 @@ def anchor_target_layer_tf(all_anchors, gt_boxes, im_info, settings):
   """
   TF function version anchor target layer
   Args:
-    all_anchors: Tensor with shape (total_anchers,4)
+    all_anchors: Tensor with shape (1,h,w,num_anchor_pre_point*4)
       where 4 is [y1, x1, y2, x2]
     gt_boxes: Tensor with shape (total_gts,4)
       where 4 is [xstart, ystart, w, h]
@@ -40,7 +40,9 @@ def anchor_target_layer_tf(all_anchors, gt_boxes, im_info, settings):
     with shape (total_anchers, 4)
 
   """
-  
+  anchor_img_size = all_anchors.shape[1:3]
+  anchor_size = int(all_anchors.shape[3]/4)
+  all_anchors = tf.reshape(all_anchors,[-1,4])
   # inside_len = inds_inside.shape[0]
   inds_inside = tf.where(
     (all_anchors[:,0]>=0.0) &
@@ -69,10 +71,10 @@ def anchor_target_layer_tf(all_anchors, gt_boxes, im_info, settings):
 
   # just slect the max value
   # of overlaps in axis = (0,1)
-  # argmax_overlaps: (inside_len,1) max overlaps indices in each boxs_inside
+  # argmax_overlaps: shape=(inside_len,1) value=[0,gt_box_len)
   # max_overlaps: (inside_len,1) max overlaps in each boxs_inside
-  # gt_argmax_overlaps: (N,1) max overlaps indices in each gt_boxs
-  # gt_max_overlaps: (N,1) max overlaps in each gt_boxs
+  # gt_argmax_overlaps: shape=(gt_box_len,1) value=[0,inside_len)
+  # gt_max_overlaps: (gt_box_len,1) max overlaps in each gt_boxs
   argmax_overlaps = tf.argmax(overlaps,axis=1,output_type=tf.int32)
   gt_argmax_overlaps = tf.argmax(overlaps,axis=0,output_type=tf.int32)
   rng=tf.range(overlaps.shape[0],dtype=tf.int32)
@@ -117,8 +119,6 @@ def anchor_target_layer_tf(all_anchors, gt_boxes, im_info, settings):
   # only the positive ones have regression targets
   bbox_inside_weights = np.zeros((overlaps.shape[0], 4), dtype=np.float32)
   bbox_inside_weights[labels == 1, :] = np.array(settings["RPN_BBOX_INSIDE_WEIGHTS"])
-  bbox_inside_weights.reshape([1,]+im_info+[-1])
-
 
   bbox_outside_weights = np.zeros((overlaps.shape[0], 4), dtype=np.float32)
   if settings["RPN_POSITIVE_WEIGHT"] < 0:
@@ -141,10 +141,11 @@ def anchor_target_layer_tf(all_anchors, gt_boxes, im_info, settings):
   labels = _unmap(labels, total_anchors, inds_inside.numpy(), fill=-1)
   bbox_targets = _unmap(bbox_targets, total_anchors, inds_inside.numpy(), fill=0)
   bbox_inside_weights = _unmap(bbox_inside_weights, total_anchors, inds_inside.numpy(), fill=0)
+  # bbox_inside_weights = bbox_inside_weights.reshape([1,]+anchor_img_size+[anchor_size*4])
   bbox_outside_weights = _unmap(bbox_outside_weights, total_anchors, inds_inside.numpy(), fill=0)
-
+  # bbox_outside_weights = bbox_outside_weights.reshape([1,]+anchor_img_size+[anchor_size*4])
   # convert all numpy to tensor
-  rpn_labels = tf.convert_to_tensor(labels,dtype=tf.float32)
+  rpn_labels = tf.convert_to_tensor(labels,dtype=tf.int32)
   rpn_bbox_targets = tf.convert_to_tensor(bbox_targets,dtype=tf.float32)
   rpn_bbox_inside_weights = tf.convert_to_tensor(bbox_inside_weights,dtype=tf.float32)
   rpn_bbox_outside_weights = tf.convert_to_tensor(bbox_outside_weights,dtype=tf.float32)

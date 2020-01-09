@@ -55,17 +55,23 @@ class Faster_RCNN(tf.keras.Model):
   Return: 
     Dictionary object: {
       ---RPN outouts---
-      "rpn_bbox_pred": Tensor with shape (N,4)
+      "rpn_bbox_pred": Tensor with shape (1,f_h,f_w,anchor_num*4)
         where 4 is [y1, x1, y2, x2]
-      "rpn_cls_score": Tensor with shape (N,1)
+      "rpn_cls_score": Tensor with shape (1,f_h,f_w,anchor_num*2)
+        where 2 is [positive, negative]
 
       ---RCNN outouts---
-      "bbox_pred": Tensor with shape (N,num_classes*4)
+      "bbox_pred": Tensor with shape (max_outputs_num, num_classes*4)
         where 4 is [y1, x1, y2, x2]
-      "cls_score": Tensor with shape (N,num_classes)
+      "cls_score": Tensor with shape (max_outputs_num, num_classes)
 
       ---Normal output---
-      "rois": Tensor with shape (N,4)
+      "rois": Tensor with shape (max_outputs_num, 5)
+        where 5 is [0, y1, x1, y2, x2]
+      "rpn_scores": Tensor with shape (max_outputs_num)
+
+      ---For Training---
+      "img_sz" : image size
     }
 
   """
@@ -414,17 +420,23 @@ class Faster_RCNN(tf.keras.Model):
     Return: 
       Dictionary object: {
         ---RPN outouts---
-        "rpn_bbox_pred": Tensor with shape (N,4)
+        "rpn_bbox_pred": Tensor with shape (1,f_h,f_w,anchor_num*4)
           where 4 is [y1, x1, y2, x2]
-        "rpn_cls_score": Tensor with shape (N,1)
+        "rpn_cls_score": Tensor with shape (1,f_h,f_w,anchor_num*2)
+          where 2 is [positive, negative]
 
         ---RCNN outouts---
-        "bbox_pred": Tensor with shape (N,num_classes*4)
+        "bbox_pred": Tensor with shape (max_outputs_num, num_classes*4)
           where 4 is [y1, x1, y2, x2]
-        "cls_score": Tensor with shape (N,num_classes)
+        "cls_score": Tensor with shape (max_outputs_num, num_classes)
 
         ---Normal output---
-        "rois": Tensor with shape (N,4)
+        "rois": Tensor with shape (max_outputs_num, 5)
+          where 5 is [0, y1, x1, y2, x2]
+        "rpn_scores": Tensor with shape (max_outputs_num)
+
+        ---For Training---
+        "img_sz" : image size
       }
     """
     in_size = inputs.shape[1:3]
@@ -441,6 +453,8 @@ class Faster_RCNN(tf.keras.Model):
       "cls_score" : cls_score,
       "rois" : rois,
       "rpn_scores" : rpn_scores,
+      "img_sz" : in_size,
+      "num_classes" : self.num_classes,
     }
     return y_pred
 
@@ -509,39 +523,54 @@ class RCNNLoss(tf.keras.losses.Loss):
     """
     Inputs: dictionary format   
     y_true: {
-      "img_sz": Image information [height，width],
       "gt_bbox": Tensor with shape (total_gts,5)
-      "num_classes": int, total num of class
       where 4 is [class, xstart, ystart, w, h]
       where class is class number
     }
     
     y_pred: {
       ---RPN outouts---
-      "rpn_bbox_pred": Tensor with shape (N,4)
+      "rpn_bbox_pred": Tensor with shape (1,f_h,f_w,anchor_num*4)
         where 4 is [y1, x1, y2, x2]
-      "rpn_cls_score": Tensor with shape (N,1)
+      "rpn_cls_score": Tensor with shape (1,f_h,f_w,anchor_num*2)
+        where 2 is [positive, negative]
 
       ---RCNN outouts---
-      "bbox_pred": Tensor with shape (N,4)
+      "bbox_pred": Tensor with shape (max_outputs_num, num_classes*4)
         where 4 is [y1, x1, y2, x2]
-      "cls_score": Tensor with shape (N,1)
+      "cls_score": Tensor with shape (max_outputs_num, num_classes)
+
+      ---Normal output---
+      "rois": Tensor with shape (max_outputs_num, 5)
+        where 5 is [0, y1, x1, y2, x2]
+      "rpn_scores": Tensor with shape (max_outputs_num)
+
+      ---For Training---
+      "img_sz" : image size
+      "num_classes": int, total num of class
     }
 
     """
 
     rpn_labels, rpn_bbox_targets, rpn_bbox_inside_weights, rpn_bbox_outside_weights \
-     = anchor_target_layer_tf(y_pred["rpn_bbox_pred"], y_true["gt_bbox"][:,1:5], y_true["img_sz"], self.cfg)
+     = anchor_target_layer_tf(
+       all_anchors=y_pred["rpn_bbox_pred"], 
+       gt_boxes=y_true["gt_bbox"][:,1:5], 
+       im_info=y_pred["img_sz"], 
+       settings=self.cfg,
+       )
 
     # RPN, class loss
     rpn_select = tf.where(tf.not_equal(rpn_labels, -1))
-    rpn_cls_score = tf.gather(y_pred['rpn_cls_score'], rpn_select)
-    rpn_label = tf.gather(rpn_labels, rpn_select)
+    rpn_cls_score = tf.reshape(y_pred['rpn_cls_score'],[-1,2])
+    rpn_cls_score = tf.reshape(tf.gather(rpn_cls_score, rpn_select),[-1,2])
+    rpn_label = tf.reshape(tf.gather(rpn_labels, rpn_select),[-1])
+
     rpn_cross_entropy = tf.reduce_mean(
       tf.nn.sparse_softmax_cross_entropy_with_logits(logits=rpn_cls_score, labels=rpn_label))
 
     # RPN, bbox loss
-    rpn_bbox_pred = y_pred['rpn_bbox_pred']
+    rpn_bbox_pred = tf.reshape(y_pred['rpn_bbox_pred'],[-1,4])
     rpn_loss_box = self._smooth_l1_loss(
       bbox_pred=rpn_bbox_pred, 
       bbox_targets=rpn_bbox_targets, 
