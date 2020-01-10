@@ -169,6 +169,6 @@ def _unmap(data, count, inds, fill=0):
     ret = np.full((count,), fill, dtype=np.float32)
     ret[inds] = data
   else:
-    ret = np.full((count,) + data.shape[1:], fill, dtype=np.float32)
+    ret = np.full([count,] + list(data.shape[1:]), fill, dtype=np.float32)
     ret[inds, :] = data
   return ret

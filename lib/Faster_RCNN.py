@@ -524,8 +524,8 @@ class RCNNLoss(tf.keras.losses.Loss):
     Inputs: dictionary format   
     y_true: {
       "gt_bbox": Tensor with shape (total_gts,5)
-      where 4 is [class, xstart, ystart, w, h]
-      where class is class number
+        where 4 is [class, xstart, ystart, w, h]
+        and class is class number
     }
     
     y_pred: {
@@ -581,7 +581,7 @@ class RCNNLoss(tf.keras.losses.Loss):
 
     rois, roi_scores, labels, bbox_targets, bbox_inside_weights, bbox_outside_weights \
       = proposal_target_layer_tf(y_pred["rois"], y_pred["rpn_scores"], 
-      y_true["gt_bbox"], y_true["num_classes"], self.cfg)
+      y_true["gt_bbox"], y_pred["num_classes"], self.cfg)
 
     # RCNN, class loss
     cls_score = y_pred["cls_score"]

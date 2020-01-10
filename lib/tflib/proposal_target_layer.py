@@ -74,7 +74,7 @@ def _sample_rois(all_rois, all_scores, gt_boxes, fg_rois_per_image, rois_per_ima
   examples.
   """
   # overlaps: (rois x gt_boxes)
-  overlaps = overlap_tf(all_rois,gt_boxes)
+  overlaps = overlap_tf(all_rois[1:5],gt_boxes[1:5])
   # find maximum in overlaps above gt_boxes
   gt_assignment = tf.argmax(overlaps,axis=1)
   max_overlaps = tf.reduce_max(overlaps,axis=1)
@@ -88,16 +88,19 @@ def _sample_rois(all_rois, all_scores, gt_boxes, fg_rois_per_image, rois_per_ima
                      (max_overlaps >= settings["BG_THRESH_LO"])).numpy()
 
   # Small modification to the original version where we ensure a fixed number of regions are sampled
+  # exist fg and bg, choose fg_rois_per_image fg and the remaining bg
   if fg_inds.size > 0 and bg_inds.size > 0:
     fg_rois_per_image = min(fg_rois_per_image, fg_inds.size)
     fg_inds = npr.choice(fg_inds, size=int(fg_rois_per_image), replace=False)
     bg_rois_per_image = rois_per_image - fg_rois_per_image
     to_replace = bg_inds.size < bg_rois_per_image
     bg_inds = npr.choice(bg_inds, size=int(bg_rois_per_image), replace=to_replace)
+  # ONLY exist fg
   elif fg_inds.size > 0:
     to_replace = fg_inds.size < rois_per_image
     fg_inds = npr.choice(fg_inds, size=int(rois_per_image), replace=to_replace)
     fg_rois_per_image = rois_per_image
+  # ONLY exist bg
   elif bg_inds.size > 0:
     to_replace = bg_inds.size < rois_per_image
     bg_inds = npr.choice(bg_inds, size=int(rois_per_image), replace=to_replace)
