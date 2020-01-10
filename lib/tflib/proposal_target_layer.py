@@ -55,37 +55,66 @@ def proposal_target_layer_tf(rpn_rois, rpn_scores, gt_boxes, _num_classes, setti
 
   # Sample rois with classification labels and bounding box regression
   # targets
-  labels, rois, roi_scores, bbox_targets, bbox_inside_weights = _sample_rois(
+  # labels, rois, roi_scores, bbox_targets, bbox_inside_weights = _sample_rois(
+  #   all_rois, all_scores, gt_boxes, fg_rois_per_image,
+  #   rois_per_image, _num_classes, settings)
+  # Evaluate ALL rois
+  labels, rois, roi_scores, bbox_targets, bbox_inside_weights = _all_rois(
     all_rois, all_scores, gt_boxes, fg_rois_per_image,
     rois_per_image, _num_classes, settings)
 
-  rois = rois.reshape(-1, 5)
-  roi_scores = roi_scores.reshape(-1)
   labels = labels.reshape(-1, 1)
-  bbox_targets = bbox_targets.reshape(-1, _num_classes * 4)
   bbox_inside_weights = bbox_inside_weights.reshape(-1, _num_classes * 4)
   bbox_outside_weights = np.array(bbox_inside_weights > 0).astype(np.float32)
 
+  labels = tf.convert_to_tensor(labels,dtype=tf.int32)
+  bbox_inside_weights = tf.convert_to_tensor(bbox_inside_weights)
+  bbox_outside_weights = tf.convert_to_tensor(bbox_outside_weights)
+  
   return rois, roi_scores, labels, bbox_targets, bbox_inside_weights, bbox_outside_weights
 
+def _all_rois(all_rois, all_scores, gt_boxes, fg_rois_per_image, rois_per_image, num_classes, settings):
+  """
+  Generate RoIs comprising foreground and background.
+  """
+  # overlaps: (rois x gt_boxes)
+  overlaps = overlap_tf(all_rois[:,1:5],gt_boxes[:,1:5])
+  # find maximum in overlaps above gt_boxes
+  gt_assignment = tf.argmax(overlaps,axis=1)
+  labels = tf.gather(gt_boxes[:,0],gt_assignment).numpy()
+  # labels = gt_boxes[:,0].numpy()
+  sel_gtb = tf.gather(gt_boxes,gt_assignment)
+  
+  targets = bbox_transform(all_rois[:, 1:5], sel_gtb[:, 1:5]).numpy()
+  if settings["BBOX_NORMALIZE_TARGETS_PRECOMPUTED"]:
+    # Optionally normalize targets by a precomputed mean and stdev
+    targets = ((targets - np.array(settings["BBOX_NORMALIZE_MEANS"]))
+               / np.array(settings["BBOX_NORMALIZE_STDS"]))
+  bbox_target_data = np.hstack(
+    (labels[:, np.newaxis], targets)).astype(np.float32, copy=False)
+
+  bbox_targets, bbox_inside_weights = \
+    _get_bbox_regression_labels(bbox_target_data, num_classes, settings)
+
+  return labels, all_rois, all_scores, bbox_targets, bbox_inside_weights
 
 def _sample_rois(all_rois, all_scores, gt_boxes, fg_rois_per_image, rois_per_image, num_classes, settings):
   """Generate a random sample of RoIs comprising foreground and background
   examples.
   """
   # overlaps: (rois x gt_boxes)
-  overlaps = overlap_tf(all_rois[1:5],gt_boxes[1:5])
+  overlaps = overlap_tf(all_rois[:,1:5],gt_boxes[:,1:5])
   # find maximum in overlaps above gt_boxes
   gt_assignment = tf.argmax(overlaps,axis=1)
   max_overlaps = tf.reduce_max(overlaps,axis=1)
-  labels = tf.gather(gt_boxes,gt_assignment).numpy()
+  labels = tf.gather(gt_boxes[:,0],gt_assignment).numpy()
 
   # Select foreground RoIs as those with >= FG_THRESH overlap
-  fg_inds = tf.where(max_overlaps >= settings["FG_THRESH"]).numpy()
+  fg_inds = tf.where(max_overlaps >= settings["FG_THRESH"]).numpy().reshape([-1])
   # Guard against the case when an image has fewer than fg_rois_per_image
   # Select background RoIs as those within [BG_THRESH_LO, BG_THRESH_HI)
   bg_inds = tf.where((max_overlaps < settings["BG_THRESH_HI"]) &
-                     (max_overlaps >= settings["BG_THRESH_LO"])).numpy()
+                     (max_overlaps >= 0.0)).numpy().reshape([-1])
 
   # Small modification to the original version where we ensure a fixed number of regions are sampled
   # exist fg and bg, choose fg_rois_per_image fg and the remaining bg
@@ -122,7 +151,7 @@ def _sample_rois(all_rois, all_scores, gt_boxes, fg_rois_per_image, rois_per_ima
   sel_gtb = tf.gather(gt_boxes,sel_gtb)
 
   # Compute bounding-box regression targets for an image.
-  targets = bbox_transform(rois[:, 1:5], sel_gtb[:, :4]).numpy()
+  targets = bbox_transform(rois[:, 1:5], sel_gtb[:, 1:5]).numpy()
 
   if settings["BBOX_NORMALIZE_TARGETS_PRECOMPUTED"]:
     # Optionally normalize targets by a precomputed mean and stdev
@@ -149,7 +178,7 @@ def _get_bbox_regression_labels(bbox_target_data, num_classes, settings):
   """
 
   clss = bbox_target_data[:, 0]
-  bbox_targets = tf.zeros((clss.shape[0], 4 * num_classes), dtype=tf.float32)
+  bbox_targets = np.zeros((clss.shape[0], 4 * num_classes), dtype=np.float32)
   bbox_inside_weights = np.zeros(bbox_targets.shape, dtype=np.float32)
   inds = np.where(clss > 0)[0]
   for ind in inds:
