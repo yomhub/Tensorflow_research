@@ -1,7 +1,7 @@
 import os, sys
 import tensorflow as tf
 import numpy as np
-from dataset.ctw import CTW
+from mydataset.ctw import CTW
 from lib.model.config import cfg
 from lib.model.faster_rcnn import Faster_RCNN, RCNNLoss
 
@@ -14,15 +14,17 @@ if __name__ == "__main__":
     loss=myloss,
     )
   x_train, y_train = mydatalog.read_batch()
+
   model.fit(
     x_train,  # input
     y_train,  # output
-    batch_size=10,
+    batch_size=50,
     # verbose=0,  # Suppress chatty output; use Tensorboard instead
-    epochs=5,
+    epochs=1,
     # validation_data=(x_test, y_test),
     # callbacks=[
     #     tf.keras.callbacks.TensorBoard(run_dir),  # log metrics
     #     hp.KerasCallback(run_dir, hparams),  # log hparams
     # ],
   )
+  print("1")

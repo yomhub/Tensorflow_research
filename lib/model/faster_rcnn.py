@@ -441,6 +441,11 @@ class Faster_RCNN(tf.keras.Model):
         "img_sz" : image size
       }
     """
+    if(inputs.dtype!=tf.float32 or inputs.dtype!=tf.float64):
+      inputs = tf.cast(inputs,tf.float32)
+    if(inputs.shape[0]==None):
+      # import pdb; pdb.set_trace()
+      return {}
     in_size = inputs.shape[1:3]
     feature = self.feature_model(inputs)
     rois, rpn_scores, rpn_cls_score, rpn_cls_prob, rpn_cls_pred, rpn_bbox_pred \
@@ -559,7 +564,7 @@ class RCNNLoss(tf.keras.losses.Loss):
     rpn_labels, rpn_bbox_targets, rpn_bbox_inside_weights, rpn_bbox_outside_weights \
      = anchor_target_layer_tf(
        all_anchors=y_pred["rpn_bbox_pred"], 
-       gt_boxes=y_true["gt_bbox"][:,1:5], 
+       gt_boxes=y_true[:,1:5], 
        im_info=y_pred["img_sz"], 
        settings=self.cfg,
        )
@@ -585,7 +590,7 @@ class RCNNLoss(tf.keras.losses.Loss):
 
     rois, roi_scores, labels, bbox_targets, bbox_inside_weights, bbox_outside_weights \
       = proposal_target_layer_tf(y_pred["rois"], y_pred["rpn_scores"], 
-      y_true["gt_bbox"], y_pred["num_classes"], self.cfg)
+      y_true, y_pred["num_classes"], self.cfg)
 
     # RCNN, class loss
     cls_score = y_pred["cls_score"]
