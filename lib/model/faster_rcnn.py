@@ -5,6 +5,8 @@
 # rcnn loss function: current building
 # proposal_target_layer_tf: current building
 # global loss function: alpha
+from __future__ import absolute_import
+from __future__ import print_function
 
 import os, sys
 import tensorflow as tf
@@ -605,34 +607,3 @@ class RCNNLoss(tf.keras.losses.Loss):
     )
 
     return cross_entropy + loss_box + rpn_cross_entropy + rpn_loss_box
-    
-
-if __name__ == "__main__":
-  # anchors = generate_anchors(ratios=np.array((1,1)), scales=np.array((1,2)))
-  testraay = tf.random.uniform((1,512,512,3))
-  test = tf.Variable([[0,1,2,3],[-4,-5,-6,-7],[0,1,0,1]],dtype=tf.float32)
-  tests = tf.Variable([[0,0,1,1],[0,1,2,3]],dtype=tf.float32)
-  # test=test[:,0:4:2].assign(tf.where(test[:,0:4:2]<0, tf.zeros_like(test[:,0:4:2])+3, test[:,0:4:2]))
-  # b=tf.where(test<0,x=test[0],test=0)
-  # t2 = tf.gather()
-  losstest = RCNNLoss(cfg,"TRAIN")
-  y_true={
-    "img_sz":[100,100],
-    "gt_bbox":tf.Variable([[1,0,0,1,1],[1,0,1,2,3],[1,1,2,5,7],[1,10,20,20,30]],dtype=tf.float32)
-  }
-  y_pred={
-    "rois": tf.Variable([[0,0,1,1],[0,1,2,3],[0,1,2,4],[0,1,2,5]],dtype=tf.float32),
-    "rpn_scores": tf.Variable([[0.1],[0.2],[0.2],[0.5]],dtype=tf.float32),
-  }
-  l3f = Faster_RCNN(num_classes=2)
-  l3f.compile(
-    optimizer=tf.keras.optimizers.Adam(),
-    loss=RCNNLoss(cfg,"TRAIN")
-    )
-  # t2=tf.broadcast_to(test,(5,2,4))
-  # t2 -= tests
-  # l3f.build((1,1024,1200,3))
-  testout = l3f(testraay)
-  t2 = losstest(y_true, testout)
-  l3f.feature_model.summary() 
-  l3f.summary()

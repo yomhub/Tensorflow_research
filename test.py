@@ -1,9 +1,9 @@
 import os, sys
 import tensorflow as tf
 import numpy as np
+from dataset.ctw import CTW
 from lib.model.config import cfg
-from lib.Faster_RCNN import Faster_RCNN, RCNNLoss
-from Dataset.ctw import CTW
+from lib.model.faster_rcnn import Faster_RCNN, RCNNLoss
 
 if __name__ == "__main__":
   model = Faster_RCNN(num_classes=2)
