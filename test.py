@@ -2,11 +2,27 @@ import os, sys
 import tensorflow as tf
 import numpy as np
 from lib.model.config import cfg
+from lib.Faster_RCNN import Faster_RCNN, RCNNLoss
+from Dataset.ctw import CTW
 
 if __name__ == "__main__":
-  
-  test = tf.Variable([[0,1,2,3],[-4,-5,-6,-7],[0,1,0,1],[0,1,0,2],[0,1,0,3],[0,1,0,4]],dtype=tf.int64)
-  test2 = tf.Variable([[0,1,2,3]],dtype=tf.int64)
-  inds=tf.reshape(tf.range(50,dtype=tf.int64),[1,-1])
-
-  print(inds)
+  model = Faster_RCNN(num_classes=2)
+  myloss = RCNNLoss(cfg,"TRAIN")
+  mydatalog = CTW()
+  model.compile(
+    optimizer=tf.keras.optimizers.Adam(),
+    loss=myloss,
+    )
+  x_train, y_train = mydatalog.read_batch()
+  model.fit(
+    x_train,  # input
+    y_train,  # output
+    batch_size=10,
+    # verbose=0,  # Suppress chatty output; use Tensorboard instead
+    epochs=5,
+    # validation_data=(x_test, y_test),
+    # callbacks=[
+    #     tf.keras.callbacks.TensorBoard(run_dir),  # log metrics
+    #     hp.KerasCallback(run_dir, hparams),  # log hparams
+    # ],
+  )

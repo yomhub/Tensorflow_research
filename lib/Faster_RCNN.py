@@ -521,34 +521,36 @@ class RCNNLoss(tf.keras.losses.Loss):
 
   def call(self, y_true, y_pred):
     """
-    Inputs: dictionary format   
-    y_true: {
-      "gt_bbox": Tensor with shape (total_gts,5)
-        where 4 is [class, xstart, ystart, w, h]
+    Return the sum of 
+      cross_entropy + loss_box +
+      rpn_cross_entropy + rpn_loss_box
+
+    Inputs:
+      y_true: Tensor with shape (total_gts,5)
+        where 5 is [class, xstart, ystart, w, h]
         and class is class number
-    }
     
-    y_pred: {
-      ---RPN outouts---
-      "rpn_bbox_pred": Tensor with shape (1,f_h,f_w,anchor_num*4)
-        where 4 is [y1, x1, y2, x2]
-      "rpn_cls_score": Tensor with shape (1,f_h,f_w,anchor_num*2)
-        where 2 is [positive, negative]
+      y_pred: {
+        ---RPN outouts---
+        "rpn_bbox_pred": Tensor with shape (1,f_h,f_w,anchor_num*4)
+          where 4 is [y1, x1, y2, x2]
+        "rpn_cls_score": Tensor with shape (1,f_h,f_w,anchor_num*2)
+          where 2 is [positive, negative]
 
-      ---RCNN outouts---
-      "bbox_pred": Tensor with shape (max_outputs_num, num_classes*4)
-        where 4 is [y1, x1, y2, x2]
-      "cls_score": Tensor with shape (max_outputs_num, num_classes)
+        ---RCNN outouts---
+        "bbox_pred": Tensor with shape (max_outputs_num, num_classes*4)
+          where 4 is [y1, x1, y2, x2]
+        "cls_score": Tensor with shape (max_outputs_num, num_classes)
 
-      ---Normal output---
-      "rois": Tensor with shape (max_outputs_num, 5)
-        where 5 is [0, y1, x1, y2, x2]
-      "rpn_scores": Tensor with shape (max_outputs_num)
+        ---Normal output---
+        "rois": Tensor with shape (max_outputs_num, 5)
+          where 5 is [0, y1, x1, y2, x2]
+        "rpn_scores": Tensor with shape (max_outputs_num)
 
-      ---For Training---
-      "img_sz" : image size
-      "num_classes": int, total num of class
-    }
+        ---For Training---
+        "img_sz" : image size
+        "num_classes": int, total num of class
+      }
 
     """
 
@@ -623,10 +625,10 @@ if __name__ == "__main__":
     "rpn_scores": tf.Variable([[0.1],[0.2],[0.2],[0.5]],dtype=tf.float32),
   }
   l3f = Faster_RCNN(num_classes=2)
-  # l3f.compile(
-  #   optimizer=tf.keras.optimizers.Adam(),
-  #   loss=RCNNLoss(cfg,"TRAIN")
-  #   )
+  l3f.compile(
+    optimizer=tf.keras.optimizers.Adam(),
+    loss=RCNNLoss(cfg,"TRAIN")
+    )
   # t2=tf.broadcast_to(test,(5,2,4))
   # t2 -= tests
   # l3f.build((1,1024,1200,3))
