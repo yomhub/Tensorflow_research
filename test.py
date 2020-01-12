@@ -5,26 +5,43 @@ from mydataset.ctw import CTW
 from lib.model.config import cfg
 from lib.model.faster_rcnn import Faster_RCNN, RCNNLoss
 
-if __name__ == "__main__":
-  model = Faster_RCNN(num_classes=2)
-  myloss = RCNNLoss(cfg,"TRAIN")
-  mydatalog = CTW()
-  model.compile(
-    optimizer=tf.keras.optimizers.Adam(),
-    loss=myloss,
-    )
-  x_train, y_train = mydatalog.read_batch()
+def grad(model, loss, y_true, y_pred):
+  with tf.GradientTape() as tape:
+    tape.watch(model.trainable_variables)
+    loss_value = loss(y_true, y_pred)
+  return loss_value, tape.gradient(loss_value, model.trainable_variables)
 
-  model.fit(
-    x_train,  # input
-    y_train,  # output
-    batch_size=50,
-    # verbose=0,  # Suppress chatty output; use Tensorboard instead
-    epochs=1,
-    # validation_data=(x_test, y_test),
-    # callbacks=[
-    #     tf.keras.callbacks.TensorBoard(run_dir),  # log metrics
-    #     hp.KerasCallback(run_dir, hparams),  # log hparams
-    # ],
-  )
+if __name__ == "__main__":
+  print(tf.version)
+  model = Faster_RCNN(num_classes=2)
+  loss = RCNNLoss(cfg,"TRAIN")
+  mydatalog = CTW(out_size=[512,512])
+  optimizer = tf.keras.optimizers.Adam(learning_rate=0.001)
+  model.compile(
+    optimizer=optimizer,
+    loss=loss,
+    )
+  y_pred = model(tf.zeros((1,512,512,3)))
+  for x_train, y_train in mydatalog.pipline_entry():
+    with tf.GradientTape() as tape:
+      tape.watch(model.trainable_variables)
+      y_pred = model(x_train)
+      loss_value = loss(y_train, y_pred)
+    grads = tape.gradient(loss_value, model.trainable_variables)
+    optimizer.apply_gradients(zip(grads, model.trainable_variables))
+    print()
+
+  # x_train, y_train = mydatalog.read_batch()
+  # model.fit(
+  #   x_train,  # input
+  #   y_train,  # output
+  #   batch_size=50,
+  #   # verbose=0,  # Suppress chatty output; use Tensorboard instead
+  #   epochs=1,
+  #   # validation_data=(x_test, y_test),
+  #   # callbacks=[
+  #   #     tf.keras.callbacks.TensorBoard(run_dir),  # log metrics
+  #   #     hp.KerasCallback(run_dir, hparams),  # log hparams
+  #   # ],
+  # )
   print("1")
