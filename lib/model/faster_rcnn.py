@@ -161,15 +161,16 @@ class Faster_RCNN(tf.keras.Model):
       ],
       name=self.feature_layer_name
       )
-    # For RPN layer
+    # =====For RPN layer=====
     self.rpn_conv = tf.keras.layers.Conv2D(filters=self.feature_layer_chs,
                             kernel_size=(3, 3),
+                            activation=tf.nn.relu,
                             name="rpn_conv/3x3",
                             )
     # 2 for have / not have obj
     self.rpn_cls_score = tf.keras.layers.Conv2D(filters=len(self.anchors)*2,
                             kernel_size=(1, 1),
-                            activation='softmax',
+                            activation=None,
                             name="rpn_cls_score",
                             )
     # 4 fro coordinate regression
@@ -180,27 +181,17 @@ class Faster_RCNN(tf.keras.Model):
                             name="rpn_bbox_pred",
                             )
 
-    # # For each RPN output point, caculate 2 class(positive negative)                        
-    # self.cls_score_fc = tf.keras.layers.Dense(len(self.anchors)*2,
-    #                         input_shape=(1,self.rpn_size[0],self.rpn_size[1],len(self.anchors)*2),
-    #                         name="cls_score_fc"
-    #                         )
-
-    # # For each RPN output point, caculate 4 regression value                        
-    # self.bbox_regression = tf.keras.layers.Dense(len(self.anchors)*4,
-    #                         input_shape=(1,self.rpn_size[0],self.rpn_size[1],len(self.anchors)*4),
-    #                         name="bbox_regression"
-    #                         )
-
     # For Classification layer
     # For each RPN output point, caculate num_classes class (eg: positive negative = 2 class)
     self.cls_layer = tf.keras.layers.Dense(self.num_classes,
                             input_shape=(1,self.cls_in_size[0]*self.cls_in_size[1]*self.feature_layer_chs),
+                            activation=None,
                             name="classification"
                             )
     # For each RPN output point, caculate 4 regression value
     self.cls_bbox_layer = tf.keras.layers.Dense(self.num_classes*4,
                             input_shape=(1,self.cls_in_size[0]*self.cls_in_size[1]*self.feature_layer_chs),
+                            activation=None,
                             name="classification_bbox"
                             )
 
@@ -481,7 +472,6 @@ class RCNNLoss(tf.keras.losses.Loss):
         where 4 is [y1, x1, y2, x2]
       "rpn_scores": Tensor with shape (N,1)
     }
-
   """
   def __init__(self, cfg, cfg_name, sigma_rpn=3.0):    
     try:
@@ -489,7 +479,7 @@ class RCNNLoss(tf.keras.losses.Loss):
     except:
       self.cfg=cfg['TRAIN']
     self.sigma_rpn=sigma_rpn
-
+    self.loss_detail={}
     super(RCNNLoss, self).__init__()
   
   def _smooth_l1_loss(self, 
@@ -610,5 +600,10 @@ class RCNNLoss(tf.keras.losses.Loss):
       bbox_inside_weights=bbox_inside_weights,
       bbox_outside_weights=bbox_outside_weights,
     )
-
+    self.loss_detail={
+      "cross_entropy":cross_entropy,
+      "loss_box":loss_box,
+      "rpn_cross_entropy":rpn_cross_entropy,
+      "rpn_loss_box":rpn_loss_box,
+    }
     return cross_entropy + loss_box + rpn_cross_entropy + rpn_loss_box

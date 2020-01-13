@@ -17,17 +17,26 @@ if __name__ == "__main__":
   loss = RCNNLoss(cfg,"TRAIN")
   mydatalog = CTW(out_size=[512,512])
   optimizer = tf.keras.optimizers.Adam(learning_rate=0.001)
+  # optimizer = tf.optimizers.SGD(learning_rate=0.001)
   model.compile(
     optimizer=optimizer,
     loss=loss,
     )
   y_pred = model(tf.zeros((1,512,512,3)))
   for x_train, y_train in mydatalog.pipline_entry():
-    with tf.GradientTape() as tape:
+    with tf.GradientTape(persistent=True) as tape:
       tape.watch(model.trainable_variables)
       y_pred = model(x_train)
       loss_value = loss(y_train, y_pred)
     grads = tape.gradient(loss_value, model.trainable_variables)
+    g_cross_entropy = tape.gradient(loss.loss_detail["cross_entropy"], model.trainable_variables)
+    g_loss_box = tape.gradient(loss.loss_detail["loss_box"], model.trainable_variables)
+    g_rpn_cross_entropy = tape.gradient(loss.loss_detail["rpn_cross_entropy"], model.trainable_variables)
+    g_rpn_loss_box = tape.gradient(loss.loss_detail["rpn_loss_box"], model.trainable_variables)
+    for itm in grads:
+      nan_ind = tf.where(tf.logical_or(tf.math.is_nan(itm),tf.math.is_inf(itm)))
+      if(nan_ind.shape[0]!=0):
+        nan_obj = tf.gather(itm,nan_ind)
     optimizer.apply_gradients(zip(grads, model.trainable_variables))
     print()
 
