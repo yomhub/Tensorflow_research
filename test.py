@@ -22,16 +22,17 @@ if __name__ == "__main__":
       tape.watch(model.trainable_variables)
       y_pred = model(x_train)
       loss_value = loss(y_train, y_pred)
-    grads = tape.gradient(loss_value, model.trainable_variables)
+    # grads = tape.gradient(loss_value, model.trainable_variables)
     g_cross_entropy = tape.gradient(loss.loss_detail["cross_entropy"], model.trainable_variables)
     g_loss_box = tape.gradient(loss.loss_detail["loss_box"], model.trainable_variables)
     g_rpn_cross_entropy = tape.gradient(loss.loss_detail["rpn_cross_entropy"], model.trainable_variables)
     g_rpn_loss_box = tape.gradient(loss.loss_detail["rpn_loss_box"], model.trainable_variables)
-    for itm in grads:
-      nan_ind = tf.where(tf.logical_or(tf.math.is_nan(itm),tf.math.is_inf(itm)))
-      if(nan_ind.shape[0]!=0):
-        nan_obj = tf.gather(itm,nan_ind)
-    optimizer.apply_gradients(zip(grads, model.trainable_variables))
+    # for itm in g_loss_box:
+    #   nan_ind = tf.where(tf.logical_or(tf.math.is_nan(itm),tf.math.is_inf(itm)))
+    #   if(nan_ind.shape[0]!=0):
+    #     nan_obj = tf.gather(itm,nan_ind)
+    optimizer.apply_gradients(zip(g_rpn_cross_entropy, model.trainable_variables))
+    optimizer.apply_gradients(zip(g_rpn_loss_box, model.trainable_variables))
     print()
 
   # x_train, y_train = mydatalog.read_batch()
