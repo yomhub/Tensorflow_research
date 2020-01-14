@@ -32,6 +32,8 @@ def proposal_target_layer_tf(rpn_rois, rpn_scores, gt_boxes, _num_classes, setti
     }
     gt_boxes: Tensor with shape (total_gts,5)
       where 5 is [class, tx, ty, tw, th]
+  Return:
+    labels: (rpn_rois.shape[0],1) tensor, class value in gt_boxes
   """
   # Proposal ROIs (0, x1, y1, x2, y2) coming from RPN
   # (i.e., rpn.proposal_layer.ProposalLayer), or any other source
@@ -188,3 +190,4 @@ def _get_bbox_regression_labels(bbox_target_data, num_classes, settings):
     bbox_targets[ind, start:end] = bbox_target_data[ind, 1:]
     bbox_inside_weights[ind, start:end] = settings["BBOX_INSIDE_WEIGHTS"]
   return bbox_targets, bbox_inside_weights
+

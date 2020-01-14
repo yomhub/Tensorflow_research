@@ -5,12 +5,6 @@ from mydataset.ctw import CTW
 from lib.model.config import cfg
 from lib.model.faster_rcnn import Faster_RCNN, RCNNLoss
 
-def grad(model, loss, y_true, y_pred):
-  with tf.GradientTape() as tape:
-    tape.watch(model.trainable_variables)
-    loss_value = loss(y_true, y_pred)
-  return loss_value, tape.gradient(loss_value, model.trainable_variables)
-
 if __name__ == "__main__":
   print(tf.version)
   model = Faster_RCNN(num_classes=2)

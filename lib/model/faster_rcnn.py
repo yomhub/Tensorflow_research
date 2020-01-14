@@ -13,12 +13,10 @@ import tensorflow as tf
 import numpy as np
 import math
 from layer_utils.generate_anchors import generate_anchors
-# from layer_utils.proposal_layer import proposal_layer_tf
 from layer_utils.snippets import generate_anchors_pre, generate_anchors_pre_tf
-from layer_utils.proposal_top_layer import proposal_top_layer, proposal_top_layer_tf
-# from layer_utils.anchor_target_layer import anchor_target_layer
-from model.bbox_transform import bbox_transform_inv, clip_boxes, bbox_transform_inv_tf, clip_boxes_tf
 from model.config import cfg
+from tflib.proposal_top_layer import proposal_top_layer_tf
+from tflib.bbox_transform import bbox_transform_inv_tf, clip_boxes_tf
 from tflib.anchor_target_layer import anchor_target_layer_tf
 from tflib.proposal_target_layer import proposal_target_layer_tf
 from tflib.common import *
@@ -437,7 +435,7 @@ class Faster_RCNN(tf.keras.Model):
     if(inputs.shape[0]==None):
       # import pdb; pdb.set_trace()
       return {}
-    in_size = inputs.shape[1:3]
+    in_size = list(inputs.shape[1:3])
     feature = self.feature_model(inputs)
     rois, rpn_scores, rpn_cls_score, rpn_cls_prob, rpn_cls_pred, rpn_bbox_pred \
      = self._region_proposal(feature,in_size)
