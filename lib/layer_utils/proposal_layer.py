@@ -26,7 +26,7 @@ def proposal_layer_tf(rpn_cls_prob, rpn_bbox_pred, im_info, cfg_key, anchors, nu
   rpn_bbox_pred = tf.reshape(rpn_bbox_pred, shape=(-1, 4))
 
   proposals = bbox_transform_inv_tf(anchors, rpn_bbox_pred)
-  proposals = clip_boxes_tf(proposals, im_info[:2])
+  proposals = clip_boxes_tf(proposals, im_info)
 
   # Non-maximal suppression
   indices = tf.image.non_max_suppression(proposals, scores, max_output_size=post_nms_topN, iou_threshold=nms_thresh)

@@ -58,14 +58,23 @@ def bbox_transform_inv_tf(boxes, deltas):
   pred_h = tf.multiply(tf.exp(dh), heights)
 
   pred_boxes0 = tf.subtract(pred_ctr_x, pred_w * 0.5)
-  pred_boxes1 = tf.subtract(pred_ctr_y, pred_h * 0.5)
   pred_boxes2 = tf.add(pred_ctr_x, pred_w * 0.5)
+  pred_boxes1 = tf.subtract(pred_ctr_y, pred_h * 0.5)
   pred_boxes3 = tf.add(pred_ctr_y, pred_h * 0.5)
 
-  return tf.stack([pred_boxes0, pred_boxes1, pred_boxes2, pred_boxes3], axis=1)
+  # # if(maxx!=None):
+  # pred_boxes0 = tf.clip_by_value(pred_boxes0, 0, im_info[1] - 1)
+  # pred_boxes2 = tf.clip_by_value(pred_boxes2, 0, im_info[1] - 1)
 
-@tf.function
+  # # if(maxy!=None):
+  # pred_boxes1 = tf.clip_by_value(pred_boxes1, 0, im_info[0] - 1)
+  # pred_boxes3 = tf.clip_by_value(pred_boxes3, 0, im_info[0] - 1)
+
+  return tf.stack([pred_boxes1, pred_boxes0, pred_boxes3, pred_boxes2], axis=1)
+
+# @tf.function
 def clip_boxes_tf(boxes, im_info):
-  b02 = tf.clip_by_value(boxes[:, 0:3:2], 0, im_info[1] - 1)
-  b13 = tf.clip_by_value(boxes[:, 1:4:2], 0, im_info[0] - 1)
+  # boxes=[y1,x1,y2,x2] im_info=[y,x] out=[y1,x1,y2,x2]
+  b02 = tf.clip_by_value(boxes[:, 0:3:2], 0, im_info[0] - 1)
+  b13 = tf.clip_by_value(boxes[:, 1:4:2], 0, im_info[1] - 1)
   return tf.stack([b02[:,0], b13[:,0], b02[:,1], b13[:,1]], axis=1)

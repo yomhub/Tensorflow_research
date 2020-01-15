@@ -28,11 +28,9 @@ def proposal_top_layer_tf(rpn_cls_prob, rpn_bbox_pred, im_info, _feat_stride, an
   top_scores = tf.reshape(top_scores, shape=(-1, 1))
   top_anchors = tf.gather(anchors, top_inds)
   top_rpn_bbox = tf.gather(rpn_bbox_pred, top_inds)
+
   proposals = bbox_transform_inv_tf(top_anchors, top_rpn_bbox)
-
-  # Clip predicted boxes to image
-  proposals = clip_boxes_tf(proposals, im_info[:2])
-
+  proposals = clip_boxes_tf(proposals, im_info)
   # Output rois blob
   # Our RPN implementation only supports a single input image, so all
   # batch inds are 0
