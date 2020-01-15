@@ -40,7 +40,7 @@ def bbox_transform(ex_rois, gt_rois):
   return targets
 
 @tf.function
-def bbox_transform_inv_tf(boxes, deltas):
+def bbox_transform_inv_tf(boxes, deltas, im_info):
   boxes = tf.cast(boxes, deltas.dtype)
   widths = tf.subtract(boxes[:, 2], boxes[:, 0]) + 1.0
   heights = tf.subtract(boxes[:, 3], boxes[:, 1]) + 1.0
