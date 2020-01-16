@@ -40,7 +40,7 @@ def bbox_transform(ex_rois, gt_rois):
   return targets
 
 @tf.function
-def bbox_transform_inv_tf(boxes, deltas, im_info):
+def bbox_transform_inv_tf(boxes, deltas):
   boxes = tf.cast(boxes, deltas.dtype)
   widths = tf.subtract(boxes[:, 2], boxes[:, 0]) + 1.0
   heights = tf.subtract(boxes[:, 3], boxes[:, 1]) + 1.0
@@ -75,6 +75,6 @@ def bbox_transform_inv_tf(boxes, deltas, im_info):
 # @tf.function
 def clip_boxes_tf(boxes, im_info):
   # boxes=[y1,x1,y2,x2] im_info=[y,x] out=[y1,x1,y2,x2]
-  b02 = tf.clip_by_value(boxes[:, 0:3:2], 0, im_info[0] - 1)
-  b13 = tf.clip_by_value(boxes[:, 1:4:2], 0, im_info[1] - 1)
+  b02 = tf.clip_by_value(boxes[:, 0:3:2], clip_value_min=0, clip_value_max=im_info[0] - 1)
+  b13 = tf.clip_by_value(boxes[:, 1:4:2], clip_value_min=0, clip_value_max=im_info[1] - 1)
   return tf.stack([b02[:,0], b13[:,0], b02[:,1], b13[:,1]], axis=1)

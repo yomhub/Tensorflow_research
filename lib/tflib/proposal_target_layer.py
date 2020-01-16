@@ -5,7 +5,7 @@ import numpy.random as npr
 from tflib.bbox_transform import bbox_transform
 from tflib.overlap import overlap_tf
 
-def proposal_target_layer_tf(rpn_rois, rpn_scores, gt_boxes, _num_classes, settings):
+def proposal_target_layer_tf(rpn_rois, rpn_scores, rcnn_rois, rcnn_scores, gt_boxes, _num_classes, settings):
   """
   Assign object detection proposals to ground-truth targets. Produces proposal
   classification labels and bounding-box regression targets.
@@ -61,7 +61,7 @@ def proposal_target_layer_tf(rpn_rois, rpn_scores, gt_boxes, _num_classes, setti
   #   all_rois, all_scores, gt_boxes, fg_rois_per_image,
   #   rois_per_image, _num_classes, settings)
   # Evaluate ALL rois
-  labels, rois, roi_scores, bbox_targets, bbox_inside_weights = _all_rois(
+  labels, rois, roi_scores, bbox_targets, bbox_inside_weights, ts_keep_inds = _sample_rois(
     all_rois, all_scores, gt_boxes, fg_rois_per_image,
     rois_per_image, _num_classes, settings)
 
@@ -73,7 +73,10 @@ def proposal_target_layer_tf(rpn_rois, rpn_scores, gt_boxes, _num_classes, setti
   bbox_inside_weights = tf.convert_to_tensor(bbox_inside_weights)
   bbox_outside_weights = tf.convert_to_tensor(bbox_outside_weights)
   
-  return rois, roi_scores, labels, bbox_targets, bbox_inside_weights, bbox_outside_weights
+  bbox_pred = tf.gather(rcnn_rois,ts_keep_inds)
+  cls_score = tf.gather(rcnn_scores,ts_keep_inds)
+  
+  return bbox_pred, cls_score, labels, bbox_targets, bbox_inside_weights, bbox_outside_weights
 
 def _all_rois(all_rois, all_scores, gt_boxes, fg_rois_per_image, rois_per_image, num_classes, settings):
   """
@@ -165,7 +168,7 @@ def _sample_rois(all_rois, all_scores, gt_boxes, fg_rois_per_image, rois_per_ima
   bbox_targets, bbox_inside_weights = \
     _get_bbox_regression_labels(bbox_target_data, num_classes, settings)
 
-  return labels, rois, roi_scores, bbox_targets, bbox_inside_weights
+  return labels, rois, roi_scores, bbox_targets, bbox_inside_weights, ts_keep_inds
 
 def _get_bbox_regression_labels(bbox_target_data, num_classes, settings):
   """Bounding-box regression targets (bbox_target_data) are stored in a
