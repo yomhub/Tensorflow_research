@@ -83,9 +83,11 @@ class Faster_RCNN(tf.keras.Model):
     anchor_multiple=[1,3,5],
     anchor_ratio=[1,0.5,2],
     rpn_size=[64,64],
-    max_outputs_num=400,
+    bx_choose="top_k",
+    max_outputs_num=2000,
     nms_thresh=0.1,
     cls_in_size=[7,7],
+    fc_node=1024,
     ):
     super(Faster_RCNN, self).__init__()
     # self.name='Faster_RCNN'
@@ -107,6 +109,7 @@ class Faster_RCNN(tf.keras.Model):
       scales=np.array(anchor_multiple)), 
       dtype=tf.float32
       )
+    self.shaif_anchors = None
     self.base_size = anchor_size
     self.anchor_scales = all2list(anchor_multiple)
     self.anchor_ratio = all2list(anchor_ratio)
@@ -116,6 +119,8 @@ class Faster_RCNN(tf.keras.Model):
     # for rat in anchor_ratio:
     #   for sz in anchor_size:
     #     self.anchors.append([int(sz*rat),int(sz/rat)])
+    self.bx_choose = "top_k" if bx_choose == "top_k" else "nms"
+    self.fc_node = int(fc_node)
 
   def build(self, 
     input_shape,
@@ -181,12 +186,12 @@ class Faster_RCNN(tf.keras.Model):
 
     # For Classification layer
     # fc6 + fc7
-    self.fc6_layer = tf.keras.layers.Dense(4096,
+    self.fc6_layer = tf.keras.layers.Dense(self.fc_node,
                             input_shape=(1,self.cls_in_size[0]*self.cls_in_size[1]*self.feature_layer_chs),
                             activation=None,
                             name="fc6",
                             )
-    self.fc7_layer = tf.keras.layers.Dense(4096,
+    self.fc7_layer = tf.keras.layers.Dense(self.fc_node,
                             input_shape=(1,self.cls_in_size[0]*self.cls_in_size[1]*self.feature_layer_chs),
                             activation=None,
                             name="fc7",
@@ -196,13 +201,13 @@ class Faster_RCNN(tf.keras.Model):
                             
     # For each RPN output point, caculate num_classes class (eg: positive negative = 2 class)
     self.cls_layer = tf.keras.layers.Dense(self.num_classes,
-                            input_shape=(1,4096),
+                            input_shape=(1,self.fc_node),
                             activation=None,
                             name="classification"
                             )
     # For each RPN output point, caculate 4 regression value
     self.cls_bbox_layer = tf.keras.layers.Dense(self.num_classes*4,
-                            input_shape=(1,4096),
+                            input_shape=(1,self.fc_node),
                             activation=None,
                             # activation="sigmoid",
                             name="classification_bbox"
@@ -232,32 +237,32 @@ class Faster_RCNN(tf.keras.Model):
         coordinate in oringinal image and 0 is placeholder
       scores: shape(self.max_outputs_num,1)
     """
-    feat_h = rpn_cls_prob.shape[1]
-    feat_w = rpn_cls_prob.shape[2]
-    stride_h=int(im_info[0]/feat_h)
-    stride_w=int(im_info[1]/feat_w)
-    shift_y = tf.range(feat_h) * stride_h
-    shift_x = tf.range(feat_w) * stride_w 
-    shift_x, shift_y = tf.meshgrid(shift_x, shift_y)
-    sx = tf.reshape(shift_x, shape=(-1,))
-    sy = tf.reshape(shift_y, shape=(-1,))
-    shifts = tf.transpose(tf.stack([sx, sy, sx, sy]))
-    shifts = tf.transpose(tf.reshape(shifts, shape=[1, -1, 4]), perm=(1, 0, 2))
-    shifts = tf.cast(shifts,tf.float32)
+    if(self.shaif_anchors==None):
+      feat_h = rpn_cls_prob.shape[1]
+      feat_w = rpn_cls_prob.shape[2]
+      stride_h=int(im_info[0]/feat_h)
+      stride_w=int(im_info[1]/feat_w)
+      shift_y = tf.range(feat_h) * stride_h + int(stride_h/2)
+      shift_x = tf.range(feat_w) * stride_w + int(stride_w/2)
+      shift_x, shift_y = tf.meshgrid(shift_x, shift_y)
+      sx = tf.reshape(shift_x, shape=(-1,))
+      sy = tf.reshape(shift_y, shape=(-1,))
+      shifts = tf.transpose(tf.stack([sx, sy, sx, sy]))
+      shifts = tf.transpose(tf.reshape(shifts, shape=[1, -1, 4]), perm=(1, 0, 2))
+      shifts = tf.cast(shifts,tf.float32)
+      # anchors: [x1,y1,x2,y2]
+      self.shaif_anchors = tf.reshape(
+        tf.add(
+          tf.reshape(self.anchors,(1,-1,4)), 
+          shifts),
+        shape=(-1, 4)
+        )
 
-    # anchors: [x1,y1,x2,y2]
-    anchors = tf.reshape(
-      tf.add(
-        tf.reshape(self.anchors,(1,-1,4)), 
-        shifts),
-      shape=(-1, 4)
-      )
-      
     rpn_bbox_pred = tf.reshape(rpn_bbox_pred, shape=(-1, 4))
 
     # proposals: [x1,y1,x2,y2]
     # return proposals to [y1,x1,y2,x2] 
-    proposals = bbox_transform_inv_tf(anchors, rpn_bbox_pred)
+    proposals = bbox_transform_inv_tf(self.shaif_anchors, rpn_bbox_pred)
     proposals = clip_boxes_tf(proposals, im_info)
 
     # only consider postive
@@ -265,7 +270,7 @@ class Faster_RCNN(tf.keras.Model):
     rpn_cls_prob = tf.reshape(rpn_cls_prob, shape=(-1,))
 
     # put all 9 boxs per pixel
-    if(False):
+    if(self.bx_choose=="top_k"):
       scores, indices = tf.nn.top_k(tf.reshape(rpn_cls_prob,[-1]), k=self.max_outputs_num)
       scores = tf.reshape(scores, shape=(-1, 1))
       bboxs = tf.gather(proposals, indices)
@@ -276,7 +281,7 @@ class Faster_RCNN(tf.keras.Model):
         max_output_size=self.max_outputs_num,
         iou_threshold=self.nms_thresh
         )
-      indices, _ = tf.unique(indices)
+      # indices, _ = tf.unique(indices)
       scores = tf.gather(rpn_cls_prob,indices)
       bboxs = tf.gather(proposals, indices)
     
@@ -356,6 +361,7 @@ class Faster_RCNN(tf.keras.Model):
       # box_indices: each boxes ref index in rpn_feature.shape[0]
       box_indices=tf.zeros([rois_fet_size.shape[0]],dtype=tf.int32),
       crop_size=[self.cls_in_size[0]*2,self.cls_in_size[1]*2],
+      # crop_size=[self.cls_in_size[0],self.cls_in_size[1]],
     )
 
     roi_feat = tf.nn.max_pool(roi_feat,
@@ -523,9 +529,10 @@ class RCNNLoss(tf.keras.losses.Loss):
     box_diff = bbox_pred - bbox_targets
     in_box_diff = bbox_inside_weights * box_diff
     abs_in_box_diff = tf.abs(in_box_diff)
-    smoothL1_sign = tf.stop_gradient(tf.cast(tf.less(abs_in_box_diff, 1. / sigma_2),dtype=tf.float32))
-    in_loss_box = tf.pow(in_box_diff, 2) * (sigma_2 / 2.) * smoothL1_sign \
-                  + (abs_in_box_diff - (0.5 / sigma_2)) * (1. - smoothL1_sign)
+    in_loss_box = tf.where(tf.less(abs_in_box_diff, 1. / sigma_2),
+                            tf.pow(in_box_diff, 2) * (sigma_2 / 2.),
+                            (abs_in_box_diff - (0.5 / sigma_2))
+                            )
     out_loss_box = bbox_outside_weights * in_loss_box
     loss_box = tf.reduce_mean(tf.reduce_sum(
       out_loss_box,

@@ -1,4 +1,7 @@
 **/__pycache__
+log
+/log
+**/log
 mydataset
 mydataset.lnk
 dataset

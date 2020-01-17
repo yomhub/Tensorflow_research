@@ -112,7 +112,7 @@ def _sample_rois(all_rois, all_scores, gt_boxes, fg_rois_per_image, rois_per_ima
   # find maximum in overlaps above gt_boxes
   gt_assignment = tf.argmax(overlaps,axis=1)
   max_overlaps = tf.reduce_max(overlaps,axis=1)
-  labels = tf.gather(gt_boxes[:,0],gt_assignment).numpy()
+  gt_labels = tf.gather(gt_boxes[:,0],gt_assignment).numpy()
 
   # Select foreground RoIs as those with >= FG_THRESH overlap
   fg_inds = tf.where(max_overlaps >= settings["FG_THRESH"]).numpy().reshape([-1])
@@ -146,10 +146,10 @@ def _sample_rois(all_rois, all_scores, gt_boxes, fg_rois_per_image, rois_per_ima
   # The indices that we're selecting (both fg and bg)
   keep_inds = np.append(fg_inds, bg_inds)
   # Select sampled values from various arrays:
-  labels = labels[keep_inds]
+  gt_labels = gt_labels[keep_inds]
   ts_keep_inds = tf.convert_to_tensor(keep_inds,dtype=tf.int32)
   # Clamp labels for the background RoIs to 0
-  labels[int(fg_rois_per_image):] = 0
+  gt_labels[int(fg_rois_per_image):] = 0
   rois = tf.gather(all_rois,ts_keep_inds)
   roi_scores = tf.gather(all_scores,ts_keep_inds)
   sel_gtb = tf.gather(gt_assignment,ts_keep_inds)
@@ -163,12 +163,12 @@ def _sample_rois(all_rois, all_scores, gt_boxes, fg_rois_per_image, rois_per_ima
     targets = ((targets - np.array(settings["BBOX_NORMALIZE_MEANS"]))
                / np.array(settings["BBOX_NORMALIZE_STDS"]))
   bbox_target_data = np.hstack(
-    (labels[:, np.newaxis], targets)).astype(np.float32, copy=False)
+    (gt_labels[:, np.newaxis], targets)).astype(np.float32, copy=False)
 
   bbox_targets, bbox_inside_weights = \
     _get_bbox_regression_labels(bbox_target_data, num_classes, settings)
 
-  return labels, rois, roi_scores, bbox_targets, bbox_inside_weights, ts_keep_inds
+  return gt_labels, rois, roi_scores, bbox_targets, bbox_inside_weights, ts_keep_inds
 
 def _get_bbox_regression_labels(bbox_target_data, num_classes, settings):
   """Bounding-box regression targets (bbox_target_data) are stored in a
