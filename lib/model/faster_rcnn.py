@@ -83,7 +83,7 @@ class Faster_RCNN(tf.keras.Model):
     anchor_multiple=[1,3,5],
     anchor_ratio=[1,0.5,2],
     rpn_size=[64,64],
-    bx_choose="top_k",
+    bx_choose="nms",
     max_outputs_num=2000,
     nms_thresh=0.1,
     cls_in_size=[7,7],
@@ -630,4 +630,5 @@ class RCNNLoss(tf.keras.losses.Loss):
       "rpn_cross_entropy":rpn_cross_entropy,
       "rpn_loss_box":rpn_loss_box,
     }
+    
     return cross_entropy + loss_box + rpn_cross_entropy + rpn_loss_box

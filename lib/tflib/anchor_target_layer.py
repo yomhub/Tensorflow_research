@@ -1,6 +1,6 @@
 import tensorflow as tf
 import numpy as np
-from tflib.bbox_transform import bbox_transform
+from tflib.bbox_transform import bbox_transform, clip_boxes_tf
 from tflib.overlap import overlap_tf
 
 def anchor_target_layer_tf(all_anchors, gt_boxes, im_info, settings):
@@ -77,12 +77,12 @@ def anchor_target_layer_tf(all_anchors, gt_boxes, im_info, settings):
   # gt_max_overlaps: (gt_box_len,1) max overlaps in each gt_boxs
   argmax_overlaps = tf.argmax(overlaps,axis=1,output_type=tf.int32)
   gt_argmax_overlaps = tf.argmax(overlaps,axis=0,output_type=tf.int32)
-  rng=tf.range(overlaps.shape[0],dtype=tf.int32)
-  rng=tf.concat([tf.reshape(rng,[-1,1]),tf.reshape(argmax_overlaps,[-1,1])],1)
-  max_overlaps = tf.gather_nd(overlaps,rng)
-  rng=tf.range(overlaps.shape[1],dtype=tf.int32)
-  rng=tf.concat([tf.reshape(gt_argmax_overlaps,[-1,1]),tf.reshape(rng,[-1,1])],1)
-  gt_max_overlaps = tf.gather_nd(overlaps,rng)
+  # rng=tf.range(overlaps.shape[0],dtype=tf.int32)
+  # rng=tf.concat([tf.reshape(rng,[-1,1]),tf.reshape(argmax_overlaps,[-1,1])],1)
+  max_overlaps = tf.reduce_max(overlaps,axis=1)
+  # rng=tf.range(overlaps.shape[1],dtype=tf.int32)
+  # rng=tf.concat([tf.reshape(gt_argmax_overlaps,[-1,1]),tf.reshape(rng,[-1,1])],1)
+  # gt_max_overlaps = tf.gather_nd(overlaps,rng)
 
   # since tf.assign will unavailable in tf2+
   # we use numpy instead of tensor

@@ -122,5 +122,6 @@ class Trainer():
     print("Current cur_cross_entropy = {}.".format(cur_cross_entropy))
     print("Current cur_loss_box = {}.".format(cur_loss_box))
     print("Time usage: {} Day {} Second".format(tend.days,tend.seconds))
+    print("======================================")
     self.current_step = cur_stp
     self.batch += 1

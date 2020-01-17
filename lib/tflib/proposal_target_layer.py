@@ -136,9 +136,10 @@ def _sample_rois(all_rois, all_scores, gt_boxes, fg_rois_per_image, rois_per_ima
     fg_rois_per_image = rois_per_image
   # ONLY exist bg
   elif bg_inds.size > 0:
-    to_replace = bg_inds.size < rois_per_image
-    bg_inds = npr.choice(bg_inds, size=int(rois_per_image), replace=to_replace)
-    fg_rois_per_image = 0
+    fg_inds = tf.argmax(overlaps,axis=0).numpy()
+    fg_rois_per_image = fg_inds.size
+    to_replace = bg_inds.size < (rois_per_image-fg_rois_per_image)
+    bg_inds = npr.choice(bg_inds, size=int(rois_per_image-fg_rois_per_image), replace=to_replace)
   else:
     import pdb
     pdb.set_trace()
