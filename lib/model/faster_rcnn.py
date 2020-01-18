@@ -122,9 +122,7 @@ class Faster_RCNN(tf.keras.Model):
     self.bx_choose = "top_k" if bx_choose == "top_k" else "nms"
     self.fc_node = int(fc_node)
 
-  def build(self, 
-    input_shape,
-    ):
+  def build(self,input_shape):
     if(self.feature_layer_name=='vgg16'):
       vgg16=tf.keras.applications.VGG16(weights='imagenet', include_top=False)
       self.feature_model = tf.keras.models.Sequential([
@@ -237,32 +235,32 @@ class Faster_RCNN(tf.keras.Model):
         coordinate in oringinal image and 0 is placeholder
       scores: shape(self.max_outputs_num,1)
     """
-    if(self.shaif_anchors==None):
-      feat_h = rpn_cls_prob.shape[1]
-      feat_w = rpn_cls_prob.shape[2]
-      stride_h=int(im_info[0]/feat_h)
-      stride_w=int(im_info[1]/feat_w)
-      shift_y = tf.range(feat_h) * stride_h + int(stride_h/2)
-      shift_x = tf.range(feat_w) * stride_w + int(stride_w/2)
-      shift_x, shift_y = tf.meshgrid(shift_x, shift_y)
-      sx = tf.reshape(shift_x, shape=(-1,))
-      sy = tf.reshape(shift_y, shape=(-1,))
-      shifts = tf.transpose(tf.stack([sx, sy, sx, sy]))
-      shifts = tf.transpose(tf.reshape(shifts, shape=[1, -1, 4]), perm=(1, 0, 2))
-      shifts = tf.cast(shifts,tf.float32)
-      # anchors: [x1,y1,x2,y2]
-      self.shaif_anchors = tf.reshape(
-        tf.add(
-          tf.reshape(self.anchors,(1,-1,4)), 
-          shifts),
-        shape=(-1, 4)
-        )
+
+    feat_h = rpn_cls_prob.shape[1]
+    feat_w = rpn_cls_prob.shape[2]
+    stride_h=int(im_info[0]/feat_h)
+    stride_w=int(im_info[1]/feat_w)
+    shift_y = tf.range(feat_h) * stride_h + int(stride_h/2)
+    shift_x = tf.range(feat_w) * stride_w + int(stride_w/2)
+    shift_x, shift_y = tf.meshgrid(shift_x, shift_y)
+    sx = tf.reshape(shift_x, shape=(-1,))
+    sy = tf.reshape(shift_y, shape=(-1,))
+    shifts = tf.transpose(tf.stack([sx, sy, sx, sy]))
+    shifts = tf.transpose(tf.reshape(shifts, shape=[1, -1, 4]), perm=(1, 0, 2))
+    shifts = tf.cast(shifts,tf.float32)
+    # anchors: [x1,y1,x2,y2]
+    anchors = tf.reshape(
+      tf.add(
+        tf.reshape(self.anchors,(1,-1,4)), 
+        shifts),
+      shape=(-1, 4)
+      )
 
     rpn_bbox_pred = tf.reshape(rpn_bbox_pred, shape=(-1, 4))
 
     # proposals: [x1,y1,x2,y2]
     # return proposals to [y1,x1,y2,x2] 
-    proposals = bbox_transform_inv_tf(self.shaif_anchors, rpn_bbox_pred)
+    proposals = bbox_transform_inv_tf(anchors, rpn_bbox_pred)
     proposals = clip_boxes_tf(proposals, im_info)
 
     # only consider postive
@@ -285,7 +283,7 @@ class Faster_RCNN(tf.keras.Model):
       scores = tf.gather(rpn_cls_prob,indices)
       bboxs = tf.gather(proposals, indices)
     
-      if(self.max_outputs_num>indices.shape[0]):
+      if(indices.shape[0]!=None and self.max_outputs_num>indices.shape[0]):
         scores = tf.reshape(scores,[-1,1])
         scores = tf.pad(scores,[[0,self.max_outputs_num-indices.shape[0]],[0,0]],constant_values=-1)
         scores = tf.reshape(scores,[-1])
@@ -354,16 +352,15 @@ class Faster_RCNN(tf.keras.Model):
       ],
       axis=1
       )
-
     roi_feat = tf.image.crop_and_resize(
       rpn_feature,
       boxes=rois_fet_size,
       # box_indices: each boxes ref index in rpn_feature.shape[0]
-      box_indices=tf.zeros([rois_fet_size.shape[0]],dtype=tf.int32),
+      box_indices=tf.zeros([self.max_outputs_num],dtype=tf.int32),
       crop_size=[self.cls_in_size[0]*2,self.cls_in_size[1]*2],
       # crop_size=[self.cls_in_size[0],self.cls_in_size[1]],
     )
-
+    
     roi_feat = tf.nn.max_pool(roi_feat,
                   ksize=[1,2,2,1],
                   strides=[1,2,2,1],
@@ -418,7 +415,8 @@ class Faster_RCNN(tf.keras.Model):
     return rois, rpn_scores, rpn_cls_score, rpn_cls_prob, rpn_cls_pred, rpn_bbox_pred
 
   def _region_classification(self, roi_feat, in_size):
-    roi_feat = tf.reshape(roi_feat,[roi_feat.shape[0],-1])
+    roi_feat = tf.reshape(roi_feat,
+      [roi_feat.shape[0],roi_feat.shape[1]*roi_feat.shape[2]*roi_feat.shape[3]])
     roi_feat = self.fc6_dp_layer(self.fc6_layer(roi_feat))
     roi_feat = self.fc7_dp_layer(self.fc7_layer(roi_feat))
     cls_score = self.cls_layer(roi_feat)
@@ -429,6 +427,7 @@ class Faster_RCNN(tf.keras.Model):
     # bbox_pred = tf.multiply(bbox_pred,tf.convert_to_tensor(in_size[0],dtype=bbox_pred.dtype))
     return cls_score, cls_pred, cls_prob, bbox_pred
 
+  # @tf.function
   def call(self, inputs):
     """
     Input: 

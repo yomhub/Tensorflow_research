@@ -173,12 +173,15 @@ class CTW():
         self._log.close()
         self._log = open(self._log_dir,'w')
     
+    def setconter(self,cont):
+        self._init_conter = cont if len(self._train_list) > cont else 0
+
     def _format_output(self,out_annotation):
       return [int(out_annotation['is_chinese']),]+out_annotation["adjusted_bbox"]
 
     def read_batch(self, batch_size=50):
-        conter = batch_size if batch_size > 1 else 10
-        batch_size = batch_size if batch_size > 1 else 10
+        conter = batch_size if batch_size > 0 else 10
+        batch_size = batch_size if batch_size > 0 else 10
         i=self._init_conter
         y_list=[]
         img_arr_list=[]
@@ -215,7 +218,8 @@ class CTW():
 
         self._init_conter=i
         img_arr_list = tf.stack(img_arr_list)
-        
+        if(len(y_list)==1):
+          y_list = y_list[0]
         return img_arr_list,y_list
 
     def pipline_entry(self):
