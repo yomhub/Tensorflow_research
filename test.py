@@ -10,10 +10,13 @@ from lib.trainer import Trainer
 if __name__ == "__main__":
 
   parser = argparse.ArgumentParser(description='Choose settings.')
-  parser.add_argument('--proposal', help='Set --debug if want to debug.',default='nms')
+  parser.add_argument('--proposal', help='Choose proposal in nms and top_k.',default='nms')
   parser.add_argument('--debug', help='Set --debug if want to debug.', action="store_true")
+  parser.add_argument('--step', help='Step size.',default=50)
+  parser.add_argument('--batch', help='Batch size.',default=20)
   args = parser.parse_args()
 
+  print("Running with: proposal: {},\n debug: {}.\n".format(args.proposal,args.debug))
   model = Faster_RCNN(num_classes=2,bx_choose=args.proposal)
   loss = RCNNLoss(cfg,"TRAIN")
   optimizer = tf.keras.optimizers.Adam(learning_rate=0.001)
