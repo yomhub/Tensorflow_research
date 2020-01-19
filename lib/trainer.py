@@ -140,8 +140,9 @@ class Trainer():
           g_cross_entropy = tape.gradient(loss.loss_detail["cross_entropy"], model.trainable_variables)
           g_loss_box = tape.gradient(loss.loss_detail["loss_box"], model.trainable_variables)
         if(self.isdebug):
-          opt.apply_gradients(zip(g_rpn_cross_entropy, model.trainable_variables))
-          opt.apply_gradients(zip(g_rpn_loss_box, model.trainable_variables))
+          # opt.apply_gradients(zip(g_rpn_cross_entropy, model.trainable_variables))
+          # opt.apply_gradients(zip(g_rpn_loss_box, model.trainable_variables))
+          opt.apply_gradients(zip(grads, model.trainable_variables))
         else:
           opt.apply_gradients(zip(grads, model.trainable_variables))
 
