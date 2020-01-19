@@ -16,7 +16,9 @@ if __name__ == "__main__":
   parser.add_argument('--batch', help='Batch size.',default=20)
   args = parser.parse_args()
 
-  print("Running with: proposal: {},\n debug: {}.\n".format(args.proposal,args.debug))
+  print("Running with: \n\t Use proposal: {},\n\t Is debug: {}.\n".format(args.proposal,args.debug))
+  print("\t Step size: {},\n\t Batch size: {}.\n".format(args.step,args.batch))
+  
   model = Faster_RCNN(num_classes=2,bx_choose=args.proposal)
   loss = RCNNLoss(cfg,"TRAIN")
   optimizer = tf.keras.optimizers.Adam(learning_rate=0.001)
