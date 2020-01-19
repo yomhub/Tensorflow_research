@@ -1,17 +1,23 @@
 import os, sys
 import tensorflow as tf
 import numpy as np
+import argparse
 from mydataset.ctw import CTW
 from lib.model.config import cfg
 from lib.model.faster_rcnn import Faster_RCNN, RCNNLoss
 from lib.trainer import Trainer
 
 if __name__ == "__main__":
-  bx_choose = "nms"
-  model = Faster_RCNN(num_classes=2,bx_choose=bx_choose)
+
+  parser = argparse.ArgumentParser(description='Choose settings.')
+  parser.add_argument('--proposal', help='Set --debug if want to debug.',default='nms')
+  parser.add_argument('--debug', help='Set --debug if want to debug.', action="store_true")
+  args = parser.parse_args()
+
+  model = Faster_RCNN(num_classes=2,bx_choose=args.proposal)
   loss = RCNNLoss(cfg,"TRAIN")
   optimizer = tf.keras.optimizers.Adam(learning_rate=0.001)
-  trainer = Trainer(isdebug=True,task_name=bx_choose)
+  trainer = Trainer(isdebug=args.debug,task_name=args.proposal)
   last_model = trainer.load(model)
   mydatalog = CTW(out_size=[512,512])
 

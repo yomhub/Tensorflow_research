@@ -1,10 +1,10 @@
 import os, sys
-import tensorflow as tf
-import numpy as np
-from mydataset.ctw import CTW
+# import tensorflow as tf
+# import numpy as np
+# from mydataset.ctw import CTW
 # from lib.tflib.evaluate_tools import *
-import matplotlib.pyplot as plt
-
+# import matplotlib.pyplot as plt
+import argparse
 # mydatalog = CTW(out_size=[512,512])
 
 # x_train, y_train = mydatalog.read_batch(batch_size=1)
@@ -15,9 +15,13 @@ import matplotlib.pyplot as plt
 # img = draw_boxes(x_train,y_train)
 # show_img(img)
 
-ff = open("tt.txt",'a+',encoding='utf8')
-ff.write("l;ine1\n")
-ff.close()
-ff = open("tt.txt",'a+',encoding='utf8')
-ff.write("l;ine1\n")
-ff.close()
+parser = argparse.ArgumentParser(description='Choose settings.')
+# parser.add_argument('integers', metavar='N', type=int, nargs='+',
+#                     help='an integer for the accumulator')
+parser.add_argument('--proposal', help='Set --debug if want to debug.',default='nms')
+parser.add_argument('--debug', help='Set --debug if want to debug.', action="store_true")
+
+args = parser.parse_args()
+print(args.debug)
+print(type(args.debug))
+print(args.proposal)
