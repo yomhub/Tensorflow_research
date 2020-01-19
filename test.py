@@ -14,6 +14,8 @@ if __name__ == "__main__":
   parser.add_argument('--debug', help='Set --debug if want to debug.', action="store_true")
   parser.add_argument('--step', type=int, help='Step size.',default=50)
   parser.add_argument('--batch', type=int, help='Batch size.',default=20)
+  # parser.add_argument('--savestep', type=int, help='Batch size.',default=20)
+  parser.add_argument('--learnrate', type=float, help='Learning rate.',default=0.001)
   args = parser.parse_args()
 
   print("Running with: \n\t Use proposal: {},\n\t Is debug: {}.\n".format(args.proposal,args.debug))
