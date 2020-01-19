@@ -7,33 +7,33 @@ from tflib.overlap import overlap_tf
 
 def proposal_target_layer_tf(rpn_rois, rpn_scores, rcnn_rois, rcnn_scores, gt_boxes, _num_classes, settings):
   """
-  Assign object detection proposals to ground-truth targets. Produces proposal
-  classification labels and bounding-box regression targets.
-  Args:
-    settings:{
-      USE_GT:
-        Whether to add ground truth boxes to 
-        the pool when sampling regions
-      BATCH_SIZE:
-        Minibatch size 
-        (number of regions of interest [ROIs])
-      FG_FRACTION:
-        Fraction of minibatch that is 
-        labeled foreground (i.e. class > 0)
-      FG_THRESH:
-        Overlap threshold for a ROI to 
-        be considered foreground (if >= FG_THRESH)
-      BG_THRESH_HI & BG_THRESH_LO:
-        Overlap threshold for a ROI to be considered 
-        background (class = 0 if overlap in [LO, HI))
-      BBOX_NORMALIZE_TARGETS_PRECOMPUTED
-        Normalize the targets using "precomputed" 
-        (or made up) means and stdevs
-    }
-    gt_boxes: Tensor with shape (total_gts,5)
-      where 5 is [class, tx, ty, tw, th]
-  Return:
-    labels: (rpn_rois.shape[0],1) tensor, class value in gt_boxes
+    Assign object detection proposals to ground-truth targets. Produces proposal
+    classification labels and bounding-box regression targets.
+    Args:
+      settings:{
+        USE_GT:
+          Whether to add ground truth boxes to 
+          the pool when sampling regions
+        BATCH_SIZE:
+          Minibatch size 
+          (number of regions of interest [ROIs])
+        FG_FRACTION:
+          Fraction of minibatch that is 
+          labeled foreground (i.e. class > 0)
+        FG_THRESH:
+          Overlap threshold for a ROI to 
+          be considered foreground (if >= FG_THRESH)
+        BG_THRESH_HI & BG_THRESH_LO:
+          Overlap threshold for a ROI to be considered 
+          background (class = 0 if overlap in [LO, HI))
+        BBOX_NORMALIZE_TARGETS_PRECOMPUTED
+          Normalize the targets using "precomputed" 
+          (or made up) means and stdevs
+      }
+      gt_boxes: Tensor with shape (total_gts,5)
+        where 5 is [class, y1, x1, y2, x2]
+    Return:
+      labels: (rpn_rois.shape[0],1) tensor, class value in gt_boxes
   """
   # Proposal ROIs (0, x1, y1, x2, y2) coming from RPN
   # (i.e., rpn.proposal_layer.ProposalLayer), or any other source
@@ -55,12 +55,7 @@ def proposal_target_layer_tf(rpn_rois, rpn_scores, rcnn_rois, rcnn_scores, gt_bo
   rois_per_image = settings["BATCH_SIZE"] 
   fg_rois_per_image = np.round(settings["FG_FRACTION"] * rois_per_image)
 
-  # Sample rois with classification labels and bounding box regression
-  # targets
-  # labels, rois, roi_scores, bbox_targets, bbox_inside_weights = _sample_rois(
-  #   all_rois, all_scores, gt_boxes, fg_rois_per_image,
-  #   rois_per_image, _num_classes, settings)
-  # Evaluate ALL rois
+  # Sample rois with classification labels and bounding box regression targets
   labels, rois, roi_scores, bbox_targets, bbox_inside_weights, ts_keep_inds = _sample_rois(
     all_rois, all_scores, gt_boxes, fg_rois_per_image,
     rois_per_image, _num_classes, settings)

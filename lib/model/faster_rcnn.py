@@ -16,7 +16,7 @@ from layer_utils.generate_anchors import generate_anchors
 from layer_utils.snippets import generate_anchors_pre, generate_anchors_pre_tf
 from model.config import cfg
 from tflib.proposal_top_layer import proposal_top_layer_tf
-from tflib.bbox_transform import bbox_transform_inv_tf, clip_boxes_tf
+from tflib.bbox_transform import bbox_transform_inv_tf, clip_boxes_tf, xywh2yxyx
 from tflib.anchor_target_layer import anchor_target_layer_tf
 from tflib.proposal_target_layer import proposal_target_layer_tf
 from tflib.common import *
@@ -31,51 +31,49 @@ _MAX_OUTPUTS_NUM = 400
 
 class Faster_RCNN(tf.keras.Model):
   """
-  Args:
-    num_classes: total number of class
-    feature_layer_name: feature layer name
-      one of'vgg16','resnet'
-    anchor_size: anchor size factor
-      default is 16  
-    anchor_multiple: anchor multiple
-      default is [1,3,5]
-    anchor_ratio: anchor ratio, can be float and list
-      default is [1,0.5,2]
-    anchors will be:
-      [anchor_ratio] * anchor_size * [anchor_multiple]
-      and normalize as
-      [-x/2,-y/2,x/2,y/2]
-      only need to ADD center coordinate to anchor
-      then we can get correspond window
-    rpn_size: feature layer output
-      default is [64,64]
-    cls_in_size: [crop_height, crop_width]
-      input size of classification
+    Args:
+      num_classes: total number of class
+      feature_layer_name: feature layer name
+        one of'vgg16','resnet'
+      anchor_size: anchor size factor
+        default is 16  
+      anchor_multiple: anchor multiple
+        default is [1,3,5]
+      anchor_ratio: anchor ratio, can be float and list
+        default is [1,0.5,2]
+      anchors will be:
+        [anchor_ratio] * anchor_size * [anchor_multiple]
+        and normalize as
+        [-x/2,-y/2,x/2,y/2]
+        only need to ADD center coordinate to anchor
+        then we can get correspond window
+      rpn_size: feature layer output
+        default is [64,64]
+      cls_in_size: [crop_height, crop_width]
+        input size of classification
 
-  Return: 
-    Dictionary object: {
-      ---RPN outouts---
-      "rpn_bbox_pred": Tensor with shape (1,f_h,f_w,anchor_num*4)
-        where 4 is [y1, x1, y2, x2]
-      "rpn_cls_score": Tensor with shape (1,f_h,f_w,anchor_num*2)
-        where 2 is [positive, negative]
+    Return: 
+      Dictionary object: {
+        ---RPN outouts---
+        "rpn_bbox_pred": Tensor with shape (1,f_h,f_w,anchor_num*4)
+          where 4 is [y1, x1, y2, x2]
+        "rpn_cls_score": Tensor with shape (1,f_h,f_w,anchor_num*2)
+          where 2 is [positive, negative]
 
-      ---RCNN outouts---
-      "bbox_pred": Tensor with shape (max_outputs_num, num_classes*4)
-        where 4 is [y1, x1, y2, x2]
-      "cls_score": Tensor with shape (max_outputs_num, num_classes)
+        ---RCNN outouts---
+        "bbox_pred": Tensor with shape (max_outputs_num, num_classes*4)
+          where 4 is [y1, x1, y2, x2]
+        "cls_score": Tensor with shape (max_outputs_num, num_classes)
 
-      ---Normal output---
-      "rois": Tensor with shape (max_outputs_num, 5)
-        where 5 is [0, y1, x1, y2, x2]
-      "rpn_scores": Tensor with shape (max_outputs_num)
+        ---Normal output---
+        "rois": Tensor with shape (max_outputs_num, 5)
+          where 5 is [0, y1, x1, y2, x2]
+        "rpn_scores": Tensor with shape (max_outputs_num)
 
-      ---For Training---
-      "img_sz" : image size
-    }
-
+        ---For Training---
+        "img_sz" : image size
+      }
   """
-
   def __init__(self,
     num_classes,
     feature_layer_name='vgg16',
@@ -215,25 +213,25 @@ class Faster_RCNN(tf.keras.Model):
 
   def _proposal_layer(self, rpn_cls_prob, rpn_bbox_pred, im_info):
     """
-    Coordinate order is [y1, x1, y2, x2] is
-    diagonal pair of box corners.
-    rpn_cls_prob: bbox score [1,y,x,2N], 
-      where 2N is [negative, positive]
-    rpn_bbox_pred: bbox coordinate [1, y, x, 4N]
-      where 4N is [dx, dy, dw, dh]
-      which are coefficients
-    x1 = start_x + dx * (end_x - start_x + 1)
-    y1 = start_y + dy * (end_y - start_y + 1)
-    width = exp(dw) * (end_x - start_x + 1)
-    height = exp(dh) * (end_y - start_y + 1)
-    
-    Input:
-      im_info: img shape [y,x]
+      Coordinate order is [y1, x1, y2, x2] is
+      diagonal pair of box corners.
+      rpn_cls_prob: bbox score [1,y,x,2N], 
+        where 2N is [negative, positive]
+      rpn_bbox_pred: bbox coordinate [1, y, x, 4N]
+        where 4N is [dx, dy, dw, dh]
+        which are coefficients
+      x1 = start_x + dx * (end_x - start_x + 1)
+      y1 = start_y + dy * (end_y - start_y + 1)
+      width = exp(dw) * (end_x - start_x + 1)
+      height = exp(dh) * (end_y - start_y + 1)
+      
+      Input:
+        im_info: img shape [y,x]
 
-    Return:
-      bboxs: shape (self.max_outputs_num,5) with [0, y1, x1, y2, x2] 
-        coordinate in oringinal image and 0 is placeholder
-      scores: shape(self.max_outputs_num,1)
+      Return:
+        bboxs: shape (self.max_outputs_num,5) with [0, y1, x1, y2, x2] 
+          coordinate in oringinal image and 0 is placeholder
+        scores: shape(self.max_outputs_num,1)
     """
 
     feat_h = rpn_cls_prob.shape[1]
@@ -296,11 +294,11 @@ class Faster_RCNN(tf.keras.Model):
 
   def _suit_fc_input(self,target,rpn_size):
     """
-    SPN implementation.
-    Convert target to rpn_size size.
-    Arg:
-      target: Tensor with (*, h, w, *)
-      rpn_size: target [height, width]
+      SPN implementation.
+      Convert target to rpn_size size.
+      Arg:
+        target: Tensor with (*, h, w, *)
+        rpn_size: target [height, width]
     """
     # pooling shape heigher than rpn_size to FC input
     if(target.shape[2]>rpn_size[0] or
@@ -371,12 +369,12 @@ class Faster_RCNN(tf.keras.Model):
 
   def _region_proposal(self, feature, in_size):
     """
-    Return:
-      rois: Tensor with (self.max_outputs_num, 5)
-        where 5 is [0, y1, x1, y2, x2] 
-        coordinate in oringinal image and 0 is placeholder
-      rpn_scores: Tensor with (self.max_outputs_num,1)
-      ...
+      Return:
+        rois: Tensor with (self.max_outputs_num, 5)
+          where 5 is [0, y1, x1, y2, x2] 
+          coordinate in oringinal image and 0 is placeholder
+        rpn_scores: Tensor with (self.max_outputs_num,1)
+        ...
     """
     # padding inage with arounded zeros
     # so 3*3 conv will get same shape with feature layer
@@ -430,29 +428,29 @@ class Faster_RCNN(tf.keras.Model):
   # @tf.function
   def call(self, inputs):
     """
-    Input: 
-      image tensor with shape (batch,h,w,chs)
-    Return: 
-      Dictionary object: {
-        ---RPN outouts---
-        "rpn_bbox_pred": Tensor with shape (1,f_h,f_w,anchor_num*4)
-          where 4 is [y1, x1, y2, x2]
-        "rpn_cls_score": Tensor with shape (1,f_h,f_w,anchor_num*2)
-          where 2 is [positive, negative]
+      Input: 
+        image tensor with shape (batch,h,w,chs)
+      Return: 
+        Dictionary object: {
+          ---RPN outouts---
+          "rpn_bbox_pred": Tensor with shape (1,f_h,f_w,anchor_num*4)
+            where 4 is [y1, x1, y2, x2]
+          "rpn_cls_score": Tensor with shape (1,f_h,f_w,anchor_num*2)
+            where 2 is [positive, negative]
 
-        ---RCNN outouts---
-        "bbox_pred": Tensor with shape (max_outputs_num, num_classes*4)
-          where 4 is [y1, x1, y2, x2]
-        "cls_score": Tensor with shape (max_outputs_num, num_classes)
+          ---RCNN outouts---
+          "bbox_pred": Tensor with shape (max_outputs_num, num_classes*4)
+            where 4 is [y1, x1, y2, x2]
+          "cls_score": Tensor with shape (max_outputs_num, num_classes)
 
-        ---Normal output---
-        "rois": Tensor with shape (max_outputs_num, 5)
-          where 5 is [0, y1, x1, y2, x2]
-        "rpn_scores": Tensor with shape (max_outputs_num)
+          ---Normal output---
+          "rois": Tensor with shape (max_outputs_num, 5)
+            where 5 is [0, y1, x1, y2, x2]
+          "rpn_scores": Tensor with shape (max_outputs_num)
 
-        ---For Training---
-        "img_sz" : image size
-      }
+          ---For Training---
+          "img_sz" : image size
+        }
     """
     if(inputs.dtype!=tf.float32 or inputs.dtype!=tf.float64):
       inputs = tf.cast(inputs,tf.float32)
@@ -480,71 +478,11 @@ class Faster_RCNN(tf.keras.Model):
 
 class RCNNLoss(tf.keras.losses.Loss):
   """
-  Args:
-    sigma_rpn: sigma in RPN bbox loss
-  Inputs: dictionary format
-    y_true: {
-      "img_sz": image size [height，width],
-      "texts": Tensor with (N,5) and 5 is 
-        [xstart, ystart, w, h, theta]
-    }
-
-    y_pred: {
-      "rois": Tensor with shape (N,4)
-        where 4 is [y1, x1, y2, x2]
-      "rpn_scores": Tensor with shape (N,1)
-    }
-  """
-  def __init__(self, cfg, cfg_name, sigma_rpn=3.0):    
-    try:
-      self.cfg=cfg[cfg_name]
-    except:
-      self.cfg=cfg['TRAIN']
-    self.sigma_rpn=sigma_rpn
-    self.loss_detail={}
-    super(RCNNLoss, self).__init__()
-  
-  def _smooth_l1_loss(self, 
-    bbox_pred, 
-    bbox_targets, 
-    bbox_inside_weights=1.0, 
-    bbox_outside_weights=1.0, 
-    sigma=1.0, 
-    dim=[1]
-  ):
-    """
-    Calculate sum(smooth_l1) 
-      where smooth_l1=0.5(|x|^2) if |x|<1 else |x|-0.5
-    Args:
-      bbox_pred with shape (M,4)
-      bbox_targets with shape (N,4)
-      bbox_inside_weights with shape (N,4)
-      bbox_outside_weights with shape (N,4)
-    Return:
-      loss value
-    """
-    assert bbox_pred.shape==bbox_targets.shape
-    sigma_2 = sigma ** 2
-    box_diff = bbox_pred - bbox_targets
-    in_box_diff = bbox_inside_weights * box_diff
-    abs_in_box_diff = tf.abs(in_box_diff)
-    in_loss_box = tf.where(tf.less(abs_in_box_diff, 1. / sigma_2),
-                            tf.pow(in_box_diff, 2) * (sigma_2 / 2.),
-                            (abs_in_box_diff - (0.5 / sigma_2))
-                            )
-    out_loss_box = bbox_outside_weights * in_loss_box
-    loss_box = tf.reduce_mean(tf.reduce_sum(
-      out_loss_box,
-      axis=dim
-    ))
-    return loss_box
-
-  def call(self, y_true, y_pred):
-    """
     Return the sum of 
       cross_entropy + loss_box +
       rpn_cross_entropy + rpn_loss_box
-
+    Args:
+      sigma_rpn: sigma in RPN bbox loss
     Inputs:
       y_true: Tensor with shape (total_gts,5)
         where 5 is [class, xstart, ystart, w, h]
@@ -571,13 +509,61 @@ class RCNNLoss(tf.keras.losses.Loss):
         "img_sz" : image size
         "num_classes": int, total num of class
       }
-
+  """
+  def __init__(self, cfg, cfg_name, sigma_rpn=3.0):    
+    try:
+      self.cfg=cfg[cfg_name]
+    except:
+      self.cfg=cfg['TRAIN']
+    self.sigma_rpn=sigma_rpn
+    self.loss_detail={}
+    super(RCNNLoss, self).__init__()
+  
+  def _smooth_l1_loss(self, 
+    bbox_pred, 
+    bbox_targets, 
+    bbox_inside_weights=1.0, 
+    bbox_outside_weights=1.0, 
+    sigma=1.0, 
+    dim=[1]
+  ):
     """
+      Calculate sum(smooth_l1) 
+        where smooth_l1=0.5(|x|^2) if |x|<1 else |x|-0.5
+      Args:
+        bbox_pred with shape (M,4)
+        bbox_targets with shape (N,4)
+        bbox_inside_weights with shape (N,4)
+        bbox_outside_weights with shape (N,4)
+      Return:
+        loss value
+    """
+    assert bbox_pred.shape==bbox_targets.shape
+    sigma_2 = sigma ** 2
+    box_diff = bbox_pred - bbox_targets
+    in_box_diff = bbox_inside_weights * box_diff
+    abs_in_box_diff = tf.abs(in_box_diff)
+    in_loss_box = tf.where(tf.less(abs_in_box_diff, 1. / sigma_2),
+                            tf.pow(in_box_diff, 2) * (sigma_2 / 2.),
+                            (abs_in_box_diff - (0.5 / sigma_2))
+                            )
+    out_loss_box = bbox_outside_weights * in_loss_box
+    loss_box = tf.reduce_mean(tf.reduce_sum(
+      out_loss_box,
+      axis=dim
+    ))
+    return loss_box
 
+  def call(self, y_true, y_pred):
+
+    # convert [class, xstart, ystart, w, h] to
+    # [y1, x1, y2, x2]
+    gt_boxes = xywh2yxyx(y_true[:,1:])
+    y_true = tf.stack([y_true[:,0],gt_boxes[:,0],gt_boxes[:,1],gt_boxes[:,2],gt_boxes[:,3]],axis=1)
     rpn_labels, rpn_bbox_targets, rpn_bbox_inside_weights, rpn_bbox_outside_weights \
      = anchor_target_layer_tf(
        all_anchors=y_pred["rpn_bbox_pred"], 
-       gt_boxes=y_true[:,1:5], 
+       gt_boxes=gt_boxes, 
        im_info=y_pred["img_sz"], 
        settings=self.cfg,
        )

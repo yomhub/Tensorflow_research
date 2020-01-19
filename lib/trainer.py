@@ -21,6 +21,7 @@ class Trainer():
     logs_path = LOGS_PATH,
     model_path = MODEL_PATH,
     task_name = None,
+    isdebug = False,
   ):
     """
     Args:
@@ -32,8 +33,15 @@ class Trainer():
     self.logs_path = logs_path if task_name == None else os.path.join(logs_path,task_name)
     self.model_path = model_path if task_name == None else os.path.join(model_path,task_name)
     self.logs_path = os.path.join(self.logs_path,datetime.now().strftime("%Y%m%d-%H%M%S"))
-    self.file_writer = tf.summary.create_file_writer(self.logs_path)
-    self.file_writer.set_as_default()
+    if(not(os.path.exists(self.logs_path))):
+      os.makedirs(self.logs_path)
+    self.isdebug = isdebug if isdebug else False
+    if(self.isdebug):
+      self.file_writer = None
+    else:
+      self.file_writer = tf.summary.create_file_writer(self.logs_path)
+      self.file_writer.set_as_default()
+
     self.current_step = 0
     self.batch = 0
     self.data_count = 0
@@ -42,6 +50,10 @@ class Trainer():
     self.opt = None
     
   def log_image(self, tfimg, log_num=10, img_size=None):
+    if(self.isdebug and self.file_writer==None):
+      self.file_writer = tf.summary.create_file_writer(self.logs_path)
+      self.file_writer.set_as_default()
+
     with self.file_writer.as_default():
     # Don't forget to reshape.
       if(img_size!=None):
@@ -66,7 +78,8 @@ class Trainer():
     tstart = datetime.now()
     total_data = x_train.shape[0]
     cur_stp = self.current_step
-    logger = open(os.path.join(self.logs_path,'result.txt'),'w+',encoding='utf8')
+
+    logger = open(os.path.join(self.logs_path,'result.txt'),'a+',encoding='utf8')
     if(type(y_train)==list):
       assert(total_data==len(y_train))
 
@@ -107,11 +120,12 @@ class Trainer():
           y_pred = model(x_train[step])
           loss_value = loss(y_train[step], y_pred)
 
-        tf.summary.scalar("Loss",loss_value,step=cur_stp + step)
-        tf.summary.scalar("rpn_cross_entropy loss",loss.loss_detail["rpn_cross_entropy"],step=cur_stp + step)
-        tf.summary.scalar("rpn_loss_box loss",loss.loss_detail["rpn_loss_box"],step=cur_stp + step)
-        tf.summary.scalar("cross_entropy loss",loss.loss_detail["cross_entropy"],step=cur_stp + step)
-        tf.summary.scalar("loss_box loss",loss.loss_detail["loss_box"],step=cur_stp + step)
+        if(not(self.isdebug)):
+          tf.summary.scalar("Loss",loss_value,step=cur_stp + step)
+          tf.summary.scalar("rpn_cross_entropy loss",loss.loss_detail["rpn_cross_entropy"],step=cur_stp + step)
+          tf.summary.scalar("rpn_loss_box loss",loss.loss_detail["rpn_loss_box"],step=cur_stp + step)
+          tf.summary.scalar("cross_entropy loss",loss.loss_detail["cross_entropy"],step=cur_stp + step)
+          tf.summary.scalar("loss_box loss",loss.loss_detail["loss_box"],step=cur_stp + step)
 
         cur_rpn_cross_entropy += loss.loss_detail["rpn_cross_entropy"]
         cur_rpn_loss_box += loss.loss_detail["rpn_loss_box"]
@@ -125,8 +139,9 @@ class Trainer():
         g_cross_entropy = tape.gradient(loss.loss_detail["cross_entropy"], model.trainable_variables)
         g_loss_box = tape.gradient(loss.loss_detail["loss_box"], model.trainable_variables)
 
-        opt.apply_gradients(zip(g_rpn_cross_entropy, model.trainable_variables))
-        opt.apply_gradients(zip(g_rpn_loss_box, model.trainable_variables))
+        # opt.apply_gradients(zip(g_rpn_cross_entropy, model.trainable_variables))
+        # opt.apply_gradients(zip(g_rpn_loss_box, model.trainable_variables))
+        opt.apply_gradients(zip(grads, model.trainable_variables))
 
       cur_stp += step
       cur_rpn_cross_entropy /= total_data
@@ -141,11 +156,12 @@ class Trainer():
         y_pred = model(x_train)
         loss_value = loss(y_train, y_pred)
 
-      tf.summary.scalar("Loss",loss_value,step=cur_stp)
-      tf.summary.scalar("rpn_cross_entropy loss",loss.loss_detail["rpn_cross_entropy"],step=cur_stp)
-      tf.summary.scalar("rpn_loss_box loss",loss.loss_detail["rpn_loss_box"],step=cur_stp)
-      tf.summary.scalar("cross_entropy loss",loss.loss_detail["cross_entropy"],step=cur_stp)
-      tf.summary.scalar("loss_box loss",loss.loss_detail["loss_box"],step=cur_stp)
+      if(not(self.isdebug)):
+        tf.summary.scalar("Loss",loss_value,step=cur_stp)
+        tf.summary.scalar("rpn_cross_entropy loss",loss.loss_detail["rpn_cross_entropy"],step=cur_stp)
+        tf.summary.scalar("rpn_loss_box loss",loss.loss_detail["rpn_loss_box"],step=cur_stp)
+        tf.summary.scalar("cross_entropy loss",loss.loss_detail["cross_entropy"],step=cur_stp)
+        tf.summary.scalar("loss_box loss",loss.loss_detail["loss_box"],step=cur_stp)
 
       cur_rpn_cross_entropy = loss.loss_detail["rpn_cross_entropy"]
       cur_rpn_loss_box = loss.loss_detail["rpn_loss_box"]
@@ -184,7 +200,7 @@ class Trainer():
     save_path = os.path.join(self.model_path,now_time)
     self.model.save_weights(os.path.join(save_path,'model'))
     # tf.saved_model.save(self.model,save_path)
-    txtlog = open(os.path.join(save_path,'log.txt'),'w',encoding='utf8')
+    txtlog = open(os.path.join(save_path,'log.txt'),'a+',encoding='utf8')
     txtlog.write("Step = {} , Batch = {} , Data count = {} .".format(self.current_step,self.batch,self.data_count))
 
   def load(self,model,loddir=None):

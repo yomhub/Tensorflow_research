@@ -5,40 +5,39 @@ from tflib.overlap import overlap_tf
 
 def anchor_target_layer_tf(all_anchors, gt_boxes, im_info, settings):
   """
-  TF function version anchor target layer
-  Args:
-    all_anchors: Tensor with shape (1,h,w,num_anchor_pre_point*4)
-      where 4 is [y1, x1, y2, x2]
-    gt_boxes: Tensor with shape (total_gts,4)
-      where 4 is [xstart, ystart, w, h]
-    im_info: [height，width]
-    settings:{
-      "RPN_NEGATIVE_OVERLAP" : RPN_NEGATIVE_OVERLAP,
-      "RPN_POSITIVE_OVERLAP" : RPN_POSITIVE_OVERLAP,
-        negative / positive overlap threshold
-      "RPN_CLOBBER_POSITIVES" : RPN_CLOBBER_POSITIVES,
-        If an anchor satisfied by positive and 
-        negative conditions set to negative
-      "RPN_BATCHSIZE" : RPN_BATCHSIZE,
-        Total number of examples
-      "RPN_FG_FRACTION" : RPN_FG_FRACTION,
-        Max percentage of foreground examples
-      "RPN_BBOX_INSIDE_WEIGHTS" : RPN_BBOX_INSIDE_WEIGHTS,
-        Deprecated (outside weights)
-      "RPN_POSITIVE_WEIGHT", RPN_POSITIVE_WEIGHT
-        Give the positive RPN examples weight 
-        of p * 1 / {num positives}
-        and give negatives a weight of (1 - p)
-        Set to -1.0 to use uniform example weighting
-      ...
-    }
-  Return:
-    Tensors
-    rpn_labels with shape (total_anchers, 1)
-    where True is 1, gt is 0, bg is -1
-    rpn_bbox_targets, rpn_bbox_inside_weights, rpn_bbox_outside_weights
-    with shape (total_anchers, 4)
-
+    TF function version anchor target layer
+    Args:
+      all_anchors: Tensor with shape (1,h,w,num_anchor_pre_point*4)
+        where 4 is [y1, x1, y2, x2]
+      gt_boxes: Tensor with shape (total_gts,4)
+        where 4 is [xstart, ystart, w, h]
+      im_info: [height，width]
+      settings:{
+        "RPN_NEGATIVE_OVERLAP" : RPN_NEGATIVE_OVERLAP,
+        "RPN_POSITIVE_OVERLAP" : RPN_POSITIVE_OVERLAP,
+          negative / positive overlap threshold
+        "RPN_CLOBBER_POSITIVES" : RPN_CLOBBER_POSITIVES,
+          If an anchor satisfied by positive and 
+          negative conditions set to negative
+        "RPN_BATCHSIZE" : RPN_BATCHSIZE,
+          Total number of examples
+        "RPN_FG_FRACTION" : RPN_FG_FRACTION,
+          Max percentage of foreground examples
+        "RPN_BBOX_INSIDE_WEIGHTS" : RPN_BBOX_INSIDE_WEIGHTS,
+          Deprecated (outside weights)
+        "RPN_POSITIVE_WEIGHT", RPN_POSITIVE_WEIGHT
+          Give the positive RPN examples weight 
+          of p * 1 / {num positives}
+          and give negatives a weight of (1 - p)
+          Set to -1.0 to use uniform example weighting
+        ...
+      }
+    Return:
+      Tensors
+      rpn_labels with shape (total_anchers, 1)
+      where True is 1, gt is 0, bg is -1
+      rpn_bbox_targets, rpn_bbox_inside_weights, rpn_bbox_outside_weights
+      with shape (total_anchers, 4)
   """
   anchor_img_size = all_anchors.shape[1:3]
   anchor_size = int(all_anchors.shape[3]/4)
@@ -75,14 +74,11 @@ def anchor_target_layer_tf(all_anchors, gt_boxes, im_info, settings):
   # max_overlaps: (inside_len,1) max overlaps in each boxs_inside
   # gt_argmax_overlaps: shape=(gt_box_len,1) value=[0,inside_len)
   # gt_max_overlaps: (gt_box_len,1) max overlaps in each gt_boxs
+
   argmax_overlaps = tf.argmax(overlaps,axis=1,output_type=tf.int32)
   gt_argmax_overlaps = tf.argmax(overlaps,axis=0,output_type=tf.int32)
-  # rng=tf.range(overlaps.shape[0],dtype=tf.int32)
-  # rng=tf.concat([tf.reshape(rng,[-1,1]),tf.reshape(argmax_overlaps,[-1,1])],1)
   max_overlaps = tf.reduce_max(overlaps,axis=1)
-  # rng=tf.range(overlaps.shape[1],dtype=tf.int32)
-  # rng=tf.concat([tf.reshape(gt_argmax_overlaps,[-1,1]),tf.reshape(rng,[-1,1])],1)
-  # gt_max_overlaps = tf.gather_nd(overlaps,rng)
+  # gt_max_overlaps = tf.reduce_max(overlaps,axis=0)
 
   # since tf.assign will unavailable in tf2+
   # we use numpy instead of tensor
@@ -92,8 +88,13 @@ def anchor_target_layer_tf(all_anchors, gt_boxes, im_info, settings):
     # assign bg labels first so that positive labels can clobber them
     # first set the negatives
     labels[max_overlaps.numpy() < settings["RPN_NEGATIVE_OVERLAP"]] = 0
+
+  # fg label: for each gt, anchor with highest overlap
   labels[gt_argmax_overlaps.numpy()] = 1
+
+  # fg label: above threshold IOU
   labels[max_overlaps.numpy()>settings["RPN_POSITIVE_OVERLAP"]] = 1
+  
   if settings["RPN_CLOBBER_POSITIVES"]:
     # assign bg labels last so that negative labels can clobber positives
     labels[max_overlaps.numpy() < settings["RPN_NEGATIVE_OVERLAP"]] = 0
@@ -155,15 +156,15 @@ def anchor_target_layer_tf(all_anchors, gt_boxes, im_info, settings):
 
 def _unmap(data, count, inds, fill=0):
   """ 
-  Unmap a subset of item (data) back to the original set of items (of
-  size count)
-  Args: 
-    data: ndarray of data
-    count: size of frist aix
-    inds: index of data in output array
-    fill: fill data
-  Return:
-    ndarray with (count,data.shape)
+    Unmap a subset of item (data) back to the original set of items (of
+    size count)
+    Args: 
+      data: ndarray of data
+      count: size of frist aix
+      inds: index of data in output array
+      fill: fill data
+    Return:
+      ndarray with (count,data.shape)
   """
   if len(data.shape) == 1:
     ret = np.full((count,), fill, dtype=np.float32)
