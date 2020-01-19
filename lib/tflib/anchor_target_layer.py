@@ -52,17 +52,6 @@ def anchor_target_layer_tf(all_anchors, gt_boxes, im_info, settings):
   inds_inside = tf.reshape(inds_inside,[-1])
   boxs_inside = tf.gather(all_anchors,inds_inside)
 
-  # convert [xstart, ystart, w, h]
-  # to [y1, x1, y2, x2]
-  gt_boxes = tf.stack(
-    [ gt_boxes[:,1],
-      gt_boxes[:,0],
-      gt_boxes[:,1] + gt_boxes[:,3],
-      gt_boxes[:,0] + gt_boxes[:,2],
-    ],
-    axis=1
-  )
-
   # boxs_inside shape (inside_len,4)
   # gt_boxs shape (total_gts,4)
   # overlaps shape (inside_len,total_gts)

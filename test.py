@@ -36,11 +36,11 @@ if __name__ == "__main__":
     )
   model(tf.zeros((1,512,512,3),dtype=tf.float32))
   
-  for i in range(20):
-    x_train, y_train = mydatalog.read_batch()
+  for i in range(args.batch):
+    x_train, y_train = mydatalog.read_batch(args.step)
     trainer.fit(x_train,y_train,model,loss,optimizer)
     
-    if(i%3==0):
+    if(i%4==0):
       trainer.set_trainer(data_count=mydatalog._init_conter)
       trainer.save()
 
