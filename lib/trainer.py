@@ -183,11 +183,11 @@ class Trainer():
     tend = datetime.now() - tstart
     logger.write("======================================\n")
     logger.write("Batch {}, setp {} ==>> {}.\n".format(self.batch+1,self.current_step+1,cur_stp+1))
-    logger.write("Current Loss: {}.\n".format(cur_loss))
-    logger.write("Current cur_rpn_cross_entropy = {}.\n".format(cur_rpn_cross_entropy))
-    logger.write("Current cur_rpn_loss_box = {}.\n".format(cur_rpn_loss_box))
-    logger.write("Current cur_cross_entropy = {}.\n".format(cur_cross_entropy))
-    logger.write("Current cur_loss_box = {}.\n".format(cur_loss_box))
+    logger.write("Avg Loss: {}.\n".format(cur_loss))
+    logger.write("Avg cur_rpn_cross_entropy = {}.\n".format(cur_rpn_cross_entropy))
+    logger.write("Avg cur_rpn_loss_box = {}.\n".format(cur_rpn_loss_box))
+    logger.write("Avg cur_cross_entropy = {}.\n".format(cur_cross_entropy))
+    logger.write("Avg cur_loss_box = {}.\n".format(cur_loss_box))
     logger.write("Time usage: {} Day {} Second.\n".format(tend.days,tend.seconds))
     logger.write("======================================\n\n")
     self.current_step = cur_stp

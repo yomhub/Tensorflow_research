@@ -45,7 +45,7 @@ def proposal_target_layer_tf(rpn_rois, rpn_scores, rcnn_rois, rcnn_scores, gt_bo
     zeros = tf.zeros((gt_boxes.shape[0], 1), dtype=gt_boxes.dtype)
     all_rois = tf.stack(
       [all_rois, 
-      tf.stack([zeros, gt_boxes[:, :-1]],axis=1)
+      tf.stack([zeros, gt_boxes[:, 1:]],axis=1)
       ],
       axis=0
     )

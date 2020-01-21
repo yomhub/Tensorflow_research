@@ -123,43 +123,70 @@ class Faster_RCNN(tf.keras.Model):
   def build(self,input_shape):
     if(self.feature_layer_name=='vgg16'):
       vgg16=tf.keras.applications.VGG16(weights='imagenet', include_top=False)
-      self.feature_model = tf.keras.models.Sequential([
-        # tf.keras.Input((1024,1024,3)),
-        # vgg16.get_layer("input_1"),
-        # Original size
-        vgg16.get_layer("block1_conv1"), vgg16.get_layer("block1_conv2"), vgg16.get_layer("block1_pool"),
-        # Original size / 2
-        vgg16.get_layer("block2_conv1"), vgg16.get_layer("block2_conv2"), vgg16.get_layer("block2_pool"),
-        # Original size / 4
-        vgg16.get_layer("block3_conv1"), vgg16.get_layer("block3_conv2"), vgg16.get_layer("block3_conv3"), 
-        # Original size / 4
-        vgg16.get_layer("block3_pool"),
-        # Original size / 8
-        vgg16.get_layer("block4_conv1"), vgg16.get_layer("block4_conv2"), vgg16.get_layer("block4_conv3"),
-        # Original size / 8
-        vgg16.get_layer("block4_pool"),
-        # Original size / 16
-        vgg16.get_layer("block5_conv1"), vgg16.get_layer("block5_conv2"), vgg16.get_layer("block5_conv3"),
-        # Original size / 16
-        # vgg16.get_layer("block5_pool"),
-        # Original size / 32
-      ],
-      name=self.feature_layer_name
+      self.feature_model = tf.keras.Model(
+        inputs=vgg16.input,
+        outputs=[
+          vgg16.get_layer('block3_pool').output,
+          # vgg16.get_layer('block4_conv3').output,
+          # vgg16.get_layer('block4_pool').output,
+          vgg16.get_layer('block5_conv3').output
+        ],
+        name=self.feature_layer_name
       )
     elif(self.feature_layer_name=='resnet'):
       rn=tf.keras.applications.resnet_v2.ResNet101V2()
-      self.feature_model = tf.keras.models.Sequential([
-        rn.get_layer("conv1_pad"), rn.get_layer("conv1_conv"), rn.get_layer("pool1_pad"), rn.get_layer("pool1_pool"),
-        rn.get_layer("block2_conv1"), rn.get_layer("block2_conv2"), rn.get_layer("block2_pool"),
-        rn.get_layer("block3_conv1"), rn.get_layer("block3_conv2"), rn.get_layer("block3_conv3"), 
-        rn.get_layer("block3_pool"),
-        rn.get_layer("block4_conv1"), rn.get_layer("block4_conv2"), rn.get_layer("block4_conv3"),
-        rn.get_layer("block4_pool"),
-        rn.get_layer("block5_conv1"), rn.get_layer("block5_conv2"), rn.get_layer("block5_conv3"),
-        rn.get_layer("block5_pool"),
-      ],
-      name=self.feature_layer_name
+        # rn.get_layer("conv1_pad"), rn.get_layer("conv1_conv"), rn.get_layer("pool1_pad"), rn.get_layer("pool1_pool"),
+        # rn.get_layer("block2_conv1"), rn.get_layer("block2_conv2"), rn.get_layer("block2_pool"),
+        # rn.get_layer("block3_conv1"), rn.get_layer("block3_conv2"), rn.get_layer("block3_conv3"), 
+        # rn.get_layer("block3_pool"),
+        # rn.get_layer("block4_conv1"), rn.get_layer("block4_conv2"), rn.get_layer("block4_conv3"),
+        # rn.get_layer("block4_pool"),
+        # rn.get_layer("block5_conv1"), rn.get_layer("block5_conv2"), rn.get_layer("block5_conv3"),
+        # rn.get_layer("block5_pool"),
+      self.feature_model = tf.keras.Model(
+        inputs=rn.input,
+        outputs=rn.get_layer("block5_pool").output,
+        name=self.feature_layer_name
       )
+    
+    self.rpn1_conv = tf.keras.models.Sequential(
+      [
+        tf.keras.layers.Conv2D(filters=256, kernel_size=(3, 3), activation=None),
+        tf.keras.layers.Conv2D(filters=256, kernel_size=(3, 3), activation=tf.nn.relu),
+      ],
+      name="rpn1_conv",
+    )
+    self.rpn1_cls_score = tf.keras.layers.Conv2D(filters=len(self.anchors)*2,
+                            kernel_size=(1, 1),
+                            activation=None,
+                            name="rpn1_cls_score",
+                            )
+
+    self.rpn1_bbox_pred = tf.keras.layers.Conv2D(filters=len(self.anchors)*4,
+                            kernel_size=(1, 1),
+                            padding='VALID', 
+                            activation=None,
+                            name="rpn1_bbox_pred",
+                            )
+    self.rpn1_conv = tf.keras.models.Sequential(
+      [
+        tf.keras.layers.Conv2D(filters=256, kernel_size=(3, 3), activation=None),
+        tf.keras.layers.Conv2D(filters=256, kernel_size=(3, 3), activation=tf.nn.relu),
+      ],
+      name="rpn1_conv",
+    )
+    self.rpn1_cls_score = tf.keras.layers.Conv2D(filters=len(self.anchors)*2,
+                            kernel_size=(1, 1),
+                            activation=None,
+                            name="rpn1_cls_score",
+                            )
+
+    self.rpn1_bbox_pred = tf.keras.layers.Conv2D(filters=len(self.anchors)*4,
+                            kernel_size=(1, 1),
+                            padding='VALID', 
+                            activation=None,
+                            name="rpn1_bbox_pred",
+                            )
     # =====For RPN layer=====
     self.rpn_conv = tf.keras.layers.Conv2D(filters=self.feature_layer_chs,
                             kernel_size=(3, 3),
@@ -367,7 +394,7 @@ class Faster_RCNN(tf.keras.Model):
 
     return roi_feat
 
-  def _region_proposal(self, feature, in_size):
+  def _region_proposal(self, feature, l4feature, in_size):
     """
       Return:
         rois: Tensor with (self.max_outputs_num, 5)
@@ -376,6 +403,18 @@ class Faster_RCNN(tf.keras.Model):
         rpn_scores: Tensor with (self.max_outputs_num,1)
         ...
     """
+    rpn1_feature = self.rpn1_conv(l4feature)
+    rpn1_cls_score = self.rpn1_cls_score(rpn1_feature)
+    rpn1_bbox_pred = self.rpn1_bbox_pred(rpn1_feature)
+    # rpn_cls_score = (1,y,x,2*anchor_num): [negative, positive, negative, positive,...]
+    # rpn_cls_prob = [negative, negative, ..., positive, positive,...]
+    rpn1_cls_prob = tf.stack(
+      [tf.nn.softmax(rpn1_cls_score[:,:,:,0::2],axis=3),
+      tf.nn.softmax(rpn1_cls_score[:,:,:,1::2],axis=3)],
+      axis=3
+    )
+    rois1, rpn_scores1 = self._proposal_layer(rpn1_cls_prob, rpn1_bbox_pred, in_size)
+
     # padding inage with arounded zeros
     # so 3*3 conv will get same shape with feature layer
     rpn_feature = self.rpn_conv(
@@ -391,8 +430,13 @@ class Faster_RCNN(tf.keras.Model):
     # for every feature point, we get datas upon every chanels
     # index and possibilities be normalized upon global
 
-    # shape = (1,y,x,2*anchor_num): [negative, positive]
-    rpn_cls_prob = tf.nn.softmax(rpn_cls_score)
+    # rpn_cls_score = (1,y,x,2*anchor_num): [negative, positive, negative, positive,...]
+    # rpn_cls_prob = [negative, negative, ..., positive, positive,...]
+    rpn_cls_prob = tf.stack(
+      [tf.nn.softmax(rpn_cls_score[:,:,:,0::2],axis=3),
+      tf.nn.softmax(rpn_cls_score[:,:,:,1::2],axis=3)],
+      axis=3
+    )
     # and box shape
     # shape = (1,y,x,4*anchor_num): [dy1, dx1, dy2, dx2]
     # where y1, x1, y2, x2 is diagonal pair of box corners
@@ -401,16 +445,10 @@ class Faster_RCNN(tf.keras.Model):
     # rpn_cls_prob = self.cls_score_fc(rpn_cls_prob)
     # rpn_bbox_pred = self.bbox_regression(rpn_bbox_pred)
 
-    # get highest score = (y,x)
-    rpn_cls_pred = tf.reshape(
-      tf.argmax(rpn_cls_prob,axis=3),
-      (rpn_cls_prob.shape[1],
-      rpn_cls_prob.shape[2])
-    )
-
     rois, rpn_scores = self._proposal_layer(rpn_cls_prob, rpn_bbox_pred, in_size)
 
-    return rois, rpn_scores, rpn_cls_score, rpn_cls_prob, rpn_cls_pred, rpn_bbox_pred
+    rpn_scores = tf.reshape(rpn_scores,[-1,2])
+    return rois, rpn_scores, rpn_cls_score, rpn_bbox_pred
 
   def _region_classification(self, roi_feat, in_size):
     roi_feat = tf.reshape(roi_feat,
@@ -458,19 +496,25 @@ class Faster_RCNN(tf.keras.Model):
       # import pdb; pdb.set_trace()
       return {}
     in_size = inputs.shape[1:3]
-    feature = self.feature_model(inputs)
-    rois, rpn_scores, rpn_cls_score, rpn_cls_prob, rpn_cls_pred, rpn_bbox_pred \
-     = self._region_proposal(feature,in_size)
+
+    front_feature,feature = self.feature_model(inputs)
+
+    rois, rpn_scores, rpn_cls_score, rpn_bbox_pred \
+     = self._region_proposal(feature,front_feature,in_size)
     roi_feat = self._crop_pool_layer(rois, in_size, feature)
     cls_score, cls_pred, cls_prob, bbox_pred = self._region_classification(roi_feat,in_size)
 
     y_pred = {
+
       "rpn_bbox_pred" : rpn_bbox_pred,
       "rpn_cls_score" : rpn_cls_score,
+
       "bbox_pred" : bbox_pred,
       "cls_score" : cls_score,
+
       "rois" : rois,
       "rpn_scores" : rpn_scores,
+
       "img_sz" : inputs.shape[1:3],
       "num_classes" : self.num_classes,
     }

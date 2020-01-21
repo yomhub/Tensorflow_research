@@ -39,8 +39,6 @@ def anchor_target_layer_tf(all_anchors, gt_boxes, im_info, settings):
       rpn_bbox_targets, rpn_bbox_inside_weights, rpn_bbox_outside_weights
       with shape (total_anchers, 4)
   """
-  anchor_img_size = all_anchors.shape[1:3]
-  anchor_size = int(all_anchors.shape[3]/4)
   all_anchors = tf.reshape(all_anchors,[-1,4])
   # inside_len = inds_inside.shape[0]
   inds_inside = tf.where(
