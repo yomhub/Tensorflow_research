@@ -448,7 +448,11 @@ class Faster_RCNN(tf.keras.Model):
     rois, rpn_scores = self._proposal_layer(rpn_cls_prob, rpn_bbox_pred, in_size)
 
     rpn_scores = tf.reshape(rpn_scores,[-1,2])
-    return rois, rpn_scores, rpn_cls_score, rpn_bbox_pred
+    rpn_scores1 = tf.reshape(rpn_scores1,[-1,2])
+    rois = tf.stack([rois,rois1],axis=0)
+    rpn_scores = tf.stack([rpn_scores,rpn_scores1],axis=0)
+
+    return rois, rpn_scores, rpn_cls_score, rpn_bbox_pred, rpn_cls_score1, rpn_bbox_pred1
 
   def _region_classification(self, roi_feat, in_size):
     roi_feat = tf.reshape(roi_feat,
@@ -499,7 +503,7 @@ class Faster_RCNN(tf.keras.Model):
 
     front_feature,feature = self.feature_model(inputs)
 
-    rois, rpn_scores, rpn_cls_score, rpn_bbox_pred \
+    rois, rpn_scores, rpn_cls_score, rpn_bbox_pred, rpn_cls_score1, rpn_bbox_pred1 \
      = self._region_proposal(feature,front_feature,in_size)
     roi_feat = self._crop_pool_layer(rois, in_size, feature)
     cls_score, cls_pred, cls_prob, bbox_pred = self._region_classification(roi_feat,in_size)
@@ -508,7 +512,7 @@ class Faster_RCNN(tf.keras.Model):
 
       "rpn_bbox_pred" : rpn_bbox_pred,
       "rpn_cls_score" : rpn_cls_score,
-
+      
       "bbox_pred" : bbox_pred,
       "cls_score" : cls_score,
 
