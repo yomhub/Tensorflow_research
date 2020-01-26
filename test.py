@@ -21,8 +21,8 @@ if __name__ == "__main__":
   print("Running with: \n\t Use proposal: {},\n\t Is debug: {}.\n".format(args.proposal,args.debug))
   print("\t Step size: {},\n\t Batch size: {}.\n".format(args.step,args.batch))
   
-  # isdebug = args.debug
-  isdebug = True
+  isdebug = args.debug
+  # isdebug = True
   learning_rate = args.learnrate
   model = Faster_RCNN(num_classes=2,bx_choose=args.proposal)
   loss = RCNNLoss(cfg,"TRAIN")

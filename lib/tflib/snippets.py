@@ -30,7 +30,7 @@ def generate_real_anchors(anchors,img_size,layer_size):
     )
   return anchors
 
-@tf.function
+# @tf.function
 def score_convert(scores):
   """
     Args: scores with (..,2*N)
