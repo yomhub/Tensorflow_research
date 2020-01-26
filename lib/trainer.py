@@ -106,6 +106,10 @@ class Trainer():
         opt = self.opt
       else:
         return
+    try:
+      type(model.trainable_variables)
+    except:
+      model(tf.zeros([1,]+x_train.shape[1:],dtype=tf.float32))
 
     if(total_data>1):
       x_train = tf.split(x_train,total_data,axis=0)
@@ -115,6 +119,8 @@ class Trainer():
       cur_loss_box = 0.0
       cur_loss = 0.0
       for step in range(total_data):
+        if(x_train[step].dtype!=tf.float32 or x_train[step].dtype!=tf.float64):
+          x_train[step] = tf.cast(x_train[step],tf.float32)
         with tf.GradientTape(persistent=True) as tape:
           tape.watch(model.trainable_variables)
           y_pred = model(x_train[step])
@@ -137,6 +143,8 @@ class Trainer():
         if(self.isdebug):
           g_rpn_cross_entropy = tape.gradient(loss.loss_detail["rpn_cross_entropy"], model.trainable_variables)
           g_rpn_loss_box = tape.gradient(loss.loss_detail["rpn_loss_box"], model.trainable_variables)
+          g_rpn_cross_entropy1 = tape.gradient(loss.loss_detail["rpn_cross_entropy1"], model.trainable_variables)
+          g_rpn_loss_box1 = tape.gradient(loss.loss_detail["rpn_loss_box1"], model.trainable_variables)
           g_cross_entropy = tape.gradient(loss.loss_detail["cross_entropy"], model.trainable_variables)
           g_loss_box = tape.gradient(loss.loss_detail["loss_box"], model.trainable_variables)
         if(self.isdebug):

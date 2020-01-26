@@ -15,10 +15,10 @@ import math
 from layer_utils.generate_anchors import generate_anchors
 from layer_utils.snippets import generate_anchors_pre, generate_anchors_pre_tf
 from model.config import cfg
-from tflib.proposal_top_layer import proposal_top_layer_tf
 from tflib.bbox_transform import bbox_transform_inv_tf, clip_boxes_tf, xywh2yxyx
 from tflib.anchor_target_layer import anchor_target_layer_tf
 from tflib.proposal_target_layer import proposal_target_layer_tf
+from tflib.snippets import generate_real_anchors, score_convert
 from tflib.common import *
 
 _LOCAL_DIR = os.path.split(__file__)[0]
@@ -47,7 +47,7 @@ class Faster_RCNN(tf.keras.Model):
         [-x/2,-y/2,x/2,y/2]
         only need to ADD center coordinate to anchor
         then we can get correspond window
-      rpn_size: feature layer output
+      outsize: feature layer output
         default is [64,64]
       cls_in_size: [crop_height, crop_width]
         input size of classification
@@ -77,10 +77,8 @@ class Faster_RCNN(tf.keras.Model):
   def __init__(self,
     num_classes,
     feature_layer_name='vgg16',
-    anchor_size=16,
-    anchor_multiple=[1,3,5],
-    anchor_ratio=[1,0.5,2],
-    rpn_size=[64,64],
+    anchor_size=1,
+    anchor_ratio=[1,1.25,0.8],
     bx_choose="nms",
     max_outputs_num=2000,
     nms_thresh=0.1,
@@ -89,7 +87,7 @@ class Faster_RCNN(tf.keras.Model):
     ):
     super(Faster_RCNN, self).__init__()
     # self.name='Faster_RCNN'
-    self.max_outputs_num=int(max_outputs_num)
+    self.max_outputs_num=int(max_outputs_num/2)
     self.nms_thresh=float(nms_thresh)
     if(feature_layer_name.lower()=='resnet'):
       self.feature_layer_name='resnet'
@@ -98,20 +96,9 @@ class Faster_RCNN(tf.keras.Model):
       self.feature_layer_name='vgg16'
       self.feature_layer_chs = 512
       # final chs is 512
-      # self.rpn_size=[,512]
 
-    # [x1,y1,x2,y2]
-    self.anchors = tf.constant(generate_anchors(
-      base_size=anchor_size,
-      ratios=np.array(anchor_ratio), 
-      scales=np.array(anchor_multiple)), 
-      dtype=tf.float32
-      )
-    self.shaif_anchors = None
     self.base_size = anchor_size
-    self.anchor_scales = all2list(anchor_multiple)
     self.anchor_ratio = all2list(anchor_ratio)
-    self.rpn_size = all2list(rpn_size,2)
     self.cls_in_size = all2list(cls_in_size,2)
     self.num_classes = int(num_classes)
     # for rat in anchor_ratio:
@@ -121,6 +108,12 @@ class Faster_RCNN(tf.keras.Model):
     self.fc_node = int(fc_node)
 
   def build(self,input_shape):
+    if(len(input_shape)==4):
+      height=input_shape[1]
+      width=input_shape[2]
+    else:
+      height=input_shape[0]
+      width=input_shape[1]
     if(self.feature_layer_name=='vgg16'):
       vgg16=tf.keras.applications.VGG16(weights='imagenet', include_top=False)
       self.feature_model = tf.keras.Model(
@@ -149,64 +142,61 @@ class Faster_RCNN(tf.keras.Model):
         name=self.feature_layer_name
       )
     
+    anchors = tf.constant(generate_anchors(
+      base_size=8,
+      ratios=np.array(self.anchor_ratio), 
+      scales=np.array([1,1.5,2])), 
+      dtype=tf.float32
+      )                
+    self.rpn1_anchors = tf.constant(generate_real_anchors(anchors,[height,width],[int(height/8),int(width/8)]))
     self.rpn1_conv = tf.keras.models.Sequential(
       [
-        tf.keras.layers.Conv2D(filters=256, kernel_size=(3, 3), activation=None),
-        tf.keras.layers.Conv2D(filters=256, kernel_size=(3, 3), activation=tf.nn.relu),
+        tf.keras.layers.Conv2D(filters=256, kernel_size=(3, 3), activation=None, padding="same"),
+        tf.keras.layers.Conv2D(filters=256, kernel_size=(3, 3), activation=tf.nn.relu, padding="same"),
       ],
       name="rpn1_conv",
     )
-    self.rpn1_cls_score = tf.keras.layers.Conv2D(filters=len(self.anchors)*2,
+    self.rpn1_cls_score = tf.keras.layers.Conv2D(filters=len(anchors)*2,
                             kernel_size=(1, 1),
                             activation=None,
                             name="rpn1_cls_score",
                             )
 
-    self.rpn1_bbox_pred = tf.keras.layers.Conv2D(filters=len(self.anchors)*4,
+    self.rpn1_bbox_pred = tf.keras.layers.Conv2D(filters=len(anchors)*4,
                             kernel_size=(1, 1),
                             padding='VALID', 
                             activation=None,
                             name="rpn1_bbox_pred",
-                            )
-    self.rpn1_conv = tf.keras.models.Sequential(
-      [
-        tf.keras.layers.Conv2D(filters=256, kernel_size=(3, 3), activation=None),
-        tf.keras.layers.Conv2D(filters=256, kernel_size=(3, 3), activation=tf.nn.relu),
-      ],
-      name="rpn1_conv",
-    )
-    self.rpn1_cls_score = tf.keras.layers.Conv2D(filters=len(self.anchors)*2,
-                            kernel_size=(1, 1),
-                            activation=None,
-                            name="rpn1_cls_score",
                             )
 
-    self.rpn1_bbox_pred = tf.keras.layers.Conv2D(filters=len(self.anchors)*4,
-                            kernel_size=(1, 1),
-                            padding='VALID', 
-                            activation=None,
-                            name="rpn1_bbox_pred",
-                            )
     # =====For RPN layer=====
+    anchors = tf.constant(generate_anchors(
+      base_size=16,
+      ratios=np.array(self.anchor_ratio), 
+      scales=np.array([0.5,0.8,1.1])), 
+      dtype=tf.float32
+      )                
+    self.anchors = tf.constant(generate_real_anchors(anchors,[height,width],[int(height/16),int(width/16)]))
     self.rpn_conv = tf.keras.layers.Conv2D(filters=self.feature_layer_chs,
                             kernel_size=(3, 3),
                             activation=tf.nn.relu,
                             name="rpn_conv/3x3",
+                            padding="same",
                             )
     # 2 for have / not have obj
-    self.rpn_cls_score = tf.keras.layers.Conv2D(filters=len(self.anchors)*2,
+    self.rpn_cls_score = tf.keras.layers.Conv2D(filters=len(anchors)*2,
                             kernel_size=(1, 1),
                             activation=None,
                             name="rpn_cls_score",
                             )
     # 4 fro coordinate regression
-    self.rpn_bbox_pred = tf.keras.layers.Conv2D(filters=len(self.anchors)*4,
+    self.rpn_bbox_pred = tf.keras.layers.Conv2D(filters=len(anchors)*4,
                             kernel_size=(1, 1),
                             padding='VALID', 
                             activation=None,
                             name="rpn_bbox_pred",
                             )
-
+                       
     # For Classification layer
     # fc6 + fc7
     self.fc6_layer = tf.keras.layers.Dense(self.fc_node,
@@ -238,12 +228,12 @@ class Faster_RCNN(tf.keras.Model):
 
     # super(Faster_RCNN, self).build(input_shape)
 
-  def _proposal_layer(self, rpn_cls_prob, rpn_bbox_pred, im_info):
+  def _proposal_layer(self, rpn_cls_prob, rpn_bbox_pred, anchors, im_info):
     """
       Coordinate order is [y1, x1, y2, x2] is
       diagonal pair of box corners.
       rpn_cls_prob: bbox score [1,y,x,2N], 
-        where 2N is [negative, positive]
+        where 2N is [negative..., positive...]
       rpn_bbox_pred: bbox coordinate [1, y, x, 4N]
         where 4N is [dx, dy, dw, dh]
         which are coefficients
@@ -260,27 +250,6 @@ class Faster_RCNN(tf.keras.Model):
           coordinate in oringinal image and 0 is placeholder
         scores: shape(self.max_outputs_num,1)
     """
-
-    feat_h = rpn_cls_prob.shape[1]
-    feat_w = rpn_cls_prob.shape[2]
-    stride_h=int(im_info[0]/feat_h)
-    stride_w=int(im_info[1]/feat_w)
-    shift_y = tf.range(feat_h) * stride_h + int(stride_h/2)
-    shift_x = tf.range(feat_w) * stride_w + int(stride_w/2)
-    shift_x, shift_y = tf.meshgrid(shift_x, shift_y)
-    sx = tf.reshape(shift_x, shape=(-1,))
-    sy = tf.reshape(shift_y, shape=(-1,))
-    shifts = tf.transpose(tf.stack([sx, sy, sx, sy]))
-    shifts = tf.transpose(tf.reshape(shifts, shape=[1, -1, 4]), perm=(1, 0, 2))
-    shifts = tf.cast(shifts,tf.float32)
-    # anchors: [x1,y1,x2,y2]
-    anchors = tf.reshape(
-      tf.add(
-        tf.reshape(self.anchors,(1,-1,4)), 
-        shifts),
-      shape=(-1, 4)
-      )
-
     rpn_bbox_pred = tf.reshape(rpn_bbox_pred, shape=(-1, 4))
 
     # proposals: [x1,y1,x2,y2]
@@ -289,7 +258,7 @@ class Faster_RCNN(tf.keras.Model):
     proposals = clip_boxes_tf(proposals, im_info)
 
     # only consider postive
-    rpn_cls_prob = rpn_cls_prob[:,:,:,len(self.anchors):]
+    rpn_cls_prob = rpn_cls_prob[:,:,:,int(rpn_cls_prob.shape[-1]/2):]
     rpn_cls_prob = tf.reshape(rpn_cls_prob, shape=(-1,))
 
     # put all 9 boxs per pixel
@@ -319,41 +288,41 @@ class Faster_RCNN(tf.keras.Model):
 
     return bboxs,scores
 
-  def _suit_fc_input(self,target,rpn_size):
+  def _suit_fc_input(self,target,outsize):
     """
       SPN implementation.
-      Convert target to rpn_size size.
+      Convert target to outsize size.
       Arg:
         target: Tensor with (*, h, w, *)
-        rpn_size: target [height, width]
+        outsize: target [height, width]
     """
-    # pooling shape heigher than rpn_size to FC input
-    if(target.shape[2]>rpn_size[0] or
-      target.shape[1]>rpn_size[1]):
-      # resize RPN output to (self.rpn_size[0],self.rpn_size[1]) though max poolling
-      kx_sz=int(math.ceil(target.shape[2]/rpn_size[0]))
-      ky_sz=int(math.ceil(target.shape[1]/rpn_size[1]))
+    # pooling shape heigher than outsize to FC input
+    if(target.shape[2]>outsize[1] or
+      target.shape[1]>outsize[0]):
+      # resize output to outsizethough max poolling
+      kx_sz=int(math.ceil(target.shape[2]/outsize[1]))
+      ky_sz=int(math.ceil(target.shape[1]/outsize[0]))
       target=tf.nn.max_pool(target,
                   ksize=[1,ky_sz,kx_sz,1],
                   strides=[1,ky_sz,kx_sz,1],
                   padding='SAME',
       )
 
-    # padding shape lower than rpn_size to FC input 
-    if(target.shape[2]<rpn_size[0] or
-      target.shape[1]<rpn_size[1]):
+    # padding shape lower than outsize to FC input 
+    if(target.shape[2]<outsize[1] or
+      target.shape[1]<outsize[0]):
 
       target=tf.image.pad_to_bounding_box(
         target,
-        offset_height=int((rpn_size[1]-target.shape[1])/2) 
-          if target.shape[1]<rpn_size[1] else 
+        offset_height=int((outsize[0]-target.shape[1])/2) 
+          if target.shape[1]<outsize[0] else 
           0,
         offset_width=int(
-          (rpn_size[0]-target.shape[2])/2) 
-          if target.shape[2]<rpn_size[0] else
+          (outsize[1]-target.shape[2])/2) 
+          if target.shape[2]<outsize[1] else
           0,
-        target_height=rpn_size[1],
-        target_width=rpn_size[0]
+        target_height=outsize[0],
+        target_width=outsize[1]
       )
 
     return target
@@ -381,7 +350,7 @@ class Faster_RCNN(tf.keras.Model):
       rpn_feature,
       boxes=rois_fet_size,
       # box_indices: each boxes ref index in rpn_feature.shape[0]
-      box_indices=tf.zeros([self.max_outputs_num],dtype=tf.int32),
+      box_indices=tf.zeros((rois_fet_size.shape[0]),dtype=tf.int32),
       crop_size=[self.cls_in_size[0]*2,self.cls_in_size[1]*2],
       # crop_size=[self.cls_in_size[0],self.cls_in_size[1]],
     )
@@ -401,42 +370,25 @@ class Faster_RCNN(tf.keras.Model):
           where 5 is [0, y1, x1, y2, x2] 
           coordinate in oringinal image and 0 is placeholder
         rpn_scores: Tensor with (self.max_outputs_num,1)
+          where 1 is [positive]
         ...
     """
     rpn1_feature = self.rpn1_conv(l4feature)
     rpn1_cls_score = self.rpn1_cls_score(rpn1_feature)
     rpn1_bbox_pred = self.rpn1_bbox_pred(rpn1_feature)
-    # rpn_cls_score = (1,y,x,2*anchor_num): [negative, positive, negative, positive,...]
     # rpn_cls_prob = [negative, negative, ..., positive, positive,...]
-    rpn1_cls_prob = tf.stack(
-      [tf.nn.softmax(rpn1_cls_score[:,:,:,0::2],axis=3),
-      tf.nn.softmax(rpn1_cls_score[:,:,:,1::2],axis=3)],
-      axis=3
-    )
-    rois1, rpn_scores1 = self._proposal_layer(rpn1_cls_prob, rpn1_bbox_pred, in_size)
+    rpn1_cls_prob = tf.nn.softmax(rpn1_cls_score,axis=3)
+    rois1, rpn_scores1 = self._proposal_layer(rpn1_cls_prob, rpn1_bbox_pred, self.rpn1_anchors, in_size)
 
     # padding inage with arounded zeros
     # so 3*3 conv will get same shape with feature layer
-    rpn_feature = self.rpn_conv(
-      tf.image.pad_to_bounding_box(
-        feature,
-        offset_height=1,
-        offset_width=1,
-        target_height=feature.shape[1]+2,
-        target_width=feature.shape[2]+2,
-      )
-    )
+    rpn_feature = self.rpn_conv(feature)
     rpn_cls_score = self.rpn_cls_score(rpn_feature)
     # for every feature point, we get datas upon every chanels
     # index and possibilities be normalized upon global
 
-    # rpn_cls_score = (1,y,x,2*anchor_num): [negative, positive, negative, positive,...]
     # rpn_cls_prob = [negative, negative, ..., positive, positive,...]
-    rpn_cls_prob = tf.stack(
-      [tf.nn.softmax(rpn_cls_score[:,:,:,0::2],axis=3),
-      tf.nn.softmax(rpn_cls_score[:,:,:,1::2],axis=3)],
-      axis=3
-    )
+    rpn_cls_prob = tf.nn.softmax(rpn_cls_score,axis=3)
     # and box shape
     # shape = (1,y,x,4*anchor_num): [dy1, dx1, dy2, dx2]
     # where y1, x1, y2, x2 is diagonal pair of box corners
@@ -445,20 +397,21 @@ class Faster_RCNN(tf.keras.Model):
     # rpn_cls_prob = self.cls_score_fc(rpn_cls_prob)
     # rpn_bbox_pred = self.bbox_regression(rpn_bbox_pred)
 
-    rois, rpn_scores = self._proposal_layer(rpn_cls_prob, rpn_bbox_pred, in_size)
+    rois, rpn_scores = self._proposal_layer(rpn_cls_prob, rpn_bbox_pred, self.anchors, in_size)
 
-    rpn_scores = tf.reshape(rpn_scores,[-1,2])
-    rpn_scores1 = tf.reshape(rpn_scores1,[-1,2])
-    rois = tf.stack([rois,rois1],axis=0)
-    rpn_scores = tf.stack([rpn_scores,rpn_scores1],axis=0)
+    rois = tf.concat([rois,rois1],axis=0)
+    # (self.max_outputs_num,1), [positive]
+    rpn_scores = tf.concat([rpn_scores,rpn_scores1],axis=0)
 
-    return rois, rpn_scores, rpn_cls_score, rpn_bbox_pred, rpn_cls_score1, rpn_bbox_pred1
+    return rois, rpn_scores, rpn_cls_score, rpn_bbox_pred, rpn1_cls_score, rpn1_bbox_pred
 
   def _region_classification(self, roi_feat, in_size):
     roi_feat = tf.reshape(roi_feat,
       [roi_feat.shape[0],roi_feat.shape[1]*roi_feat.shape[2]*roi_feat.shape[3]])
-    roi_feat = self.fc6_dp_layer(self.fc6_layer(roi_feat))
-    roi_feat = self.fc7_dp_layer(self.fc7_layer(roi_feat))
+    # roi_feat = self.fc6_dp_layer(self.fc6_layer(roi_feat))
+    roi_feat = self.fc6_layer(roi_feat)
+    # roi_feat = self.fc7_dp_layer(self.fc7_layer(roi_feat))
+    roi_feat = self.fc7_layer(roi_feat)
     cls_score = self.cls_layer(roi_feat)
     cls_pred = tf.nn.softmax(cls_score)
     # get highest score 
@@ -509,14 +462,18 @@ class Faster_RCNN(tf.keras.Model):
     cls_score, cls_pred, cls_prob, bbox_pred = self._region_classification(roi_feat,in_size)
 
     y_pred = {
-
+      # RPN
       "rpn_bbox_pred" : rpn_bbox_pred,
+      # (1,h,w,ancnum*2), [negative...,positive...]
       "rpn_cls_score" : rpn_cls_score,
-      
+      "rpn_cls_score1" : rpn_cls_score1,
+      "rpn_bbox_pred1" : rpn_bbox_pred1,
+      # RCNN output
       "bbox_pred" : bbox_pred,
       "cls_score" : cls_score,
-
+      # after top k / nms
       "rois" : rois,
+      # (self.max_outputs_num,1), [positive]
       "rpn_scores" : rpn_scores,
 
       "img_sz" : inputs.shape[1:3],
@@ -541,7 +498,7 @@ class RCNNLoss(tf.keras.losses.Loss):
         "rpn_bbox_pred": Tensor with shape (1,f_h,f_w,anchor_num*4)
           where 4 is [y1, x1, y2, x2]
         "rpn_cls_score": Tensor with shape (1,f_h,f_w,anchor_num*2)
-          where 2 is [positive, negative]
+          where anchor_num*2 is [negative..., positive...]
 
         ---RCNN outouts---
         "bbox_pred": Tensor with shape (max_outputs_num, num_classes*4)
@@ -602,31 +559,27 @@ class RCNNLoss(tf.keras.losses.Loss):
     ))
     return loss_box
 
-  def call(self, y_true, y_pred):
-
-    # convert [class, xstart, ystart, w, h] to
-    # [y1, x1, y2, x2]
-    gt_boxes = xywh2yxyx(y_true[:,1:])
-    y_true = tf.stack([y_true[:,0],gt_boxes[:,0],gt_boxes[:,1],gt_boxes[:,2],gt_boxes[:,3]],axis=1)
+  def _rpn_loss(self,gt_boxes,rpn_bbox_pred,rpn_cls_score,img_sz):
+    # convert [negative,...,positive,..] to [negitive,positive,...]
+    rpn_cls_score = score_convert(rpn_cls_score)
     rpn_labels, rpn_bbox_targets, rpn_bbox_inside_weights, rpn_bbox_outside_weights \
      = anchor_target_layer_tf(
-       all_anchors=y_pred["rpn_bbox_pred"], 
-       gt_boxes=gt_boxes, 
-       im_info=y_pred["img_sz"], 
-       settings=self.cfg,
+       all_anchors = rpn_bbox_pred, 
+       gt_boxes = gt_boxes, 
+       im_info = img_sz, 
+       settings = self.cfg,
        )
 
     # RPN, class loss
-    rpn_select = tf.where(tf.not_equal(rpn_labels, -1))
-    rpn_cls_score = tf.reshape(y_pred['rpn_cls_score'],[-1,2])
-    rpn_cls_score = tf.reshape(tf.gather(rpn_cls_score, rpn_select),[-1,2])
+    rpn_select = tf.reshape(tf.where(tf.not_equal(rpn_labels, -1)),[-1])
+    rpn_cls_score = tf.gather(rpn_cls_score, rpn_select)
     rpn_label = tf.reshape(tf.gather(rpn_labels, rpn_select),[-1])
 
     rpn_cross_entropy = tf.reduce_mean(
       tf.nn.sparse_softmax_cross_entropy_with_logits(logits=rpn_cls_score, labels=rpn_label))
 
     # RPN, bbox loss
-    rpn_bbox_pred = tf.reshape(y_pred['rpn_bbox_pred'],[-1,4])
+    rpn_bbox_pred = tf.reshape(rpn_bbox_pred,[-1,4])
     rpn_loss_box = self._smooth_l1_loss(
       bbox_pred=rpn_bbox_pred, 
       bbox_targets=rpn_bbox_targets, 
@@ -635,11 +588,34 @@ class RCNNLoss(tf.keras.losses.Loss):
       sigma=self.sigma_rpn,
     )
 
+    return rpn_cross_entropy, rpn_loss_box
+
+  def call(self, y_true, y_pred):
+
+    # convert [class, xstart, ystart, w, h] to
+    # [y1, x1, y2, x2]
+    gt_boxes = xywh2yxyx(y_true[:,1:])
+    y_true = tf.stack([y_true[:,0],gt_boxes[:,0],gt_boxes[:,1],gt_boxes[:,2],gt_boxes[:,3]],axis=1)
+
+    rpn_cross_entropy, rpn_loss_box = self._rpn_loss(
+      gt_boxes=gt_boxes,
+      rpn_bbox_pred=y_pred["rpn_bbox_pred"],
+      rpn_cls_score=y_pred['rpn_cls_score'],
+      img_sz=y_pred["img_sz"],
+      )
+
+    rpn_cross_entropy1, rpn_loss_box1 = self._rpn_loss(
+      gt_boxes=gt_boxes,
+      rpn_bbox_pred=y_pred["rpn_bbox_pred1"],
+      rpn_cls_score=y_pred['rpn_cls_score1'],
+      img_sz=y_pred["img_sz"],
+      )
+    
     bbox_pred, cls_score, labels, bbox_targets, bbox_inside_weights, bbox_outside_weights \
       = proposal_target_layer_tf(
         rpn_rois=y_pred["rois"], rpn_scores=y_pred["rpn_scores"], 
         rcnn_rois=y_pred['bbox_pred'], rcnn_scores=y_pred["cls_score"],
-        gt_boxes=y_true, _num_classes=y_pred["num_classes"], settings=self.cfg)
+        gt_boxes=y_true, num_classes=y_pred["num_classes"], settings=self.cfg)
 
     # RCNN, class loss
     label = tf.reshape(labels, [-1])
@@ -662,6 +638,8 @@ class RCNNLoss(tf.keras.losses.Loss):
       "loss_box":loss_box,
       "rpn_cross_entropy":rpn_cross_entropy,
       "rpn_loss_box":rpn_loss_box,
+      "rpn_cross_entropy1":rpn_cross_entropy1,
+      "rpn_loss_box1":rpn_loss_box1,
     }
     
-    return cross_entropy + loss_box + rpn_cross_entropy + rpn_loss_box
+    return cross_entropy + loss_box + rpn_cross_entropy + rpn_loss_box + rpn_cross_entropy1 + rpn_loss_box1

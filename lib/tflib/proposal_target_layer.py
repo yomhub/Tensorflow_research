@@ -5,7 +5,7 @@ import numpy.random as npr
 from tflib.bbox_transform import bbox_transform
 from tflib.overlap import overlap_tf
 
-def proposal_target_layer_tf(rpn_rois, rpn_scores, rcnn_rois, rcnn_scores, gt_boxes, _num_classes, settings):
+def proposal_target_layer_tf(rpn_rois, rpn_scores, rcnn_rois, rcnn_scores, gt_boxes, num_classes, settings):
   """
     Assign object detection proposals to ground-truth targets. Produces proposal
     classification labels and bounding-box regression targets.
@@ -52,16 +52,12 @@ def proposal_target_layer_tf(rpn_rois, rpn_scores, rcnn_rois, rcnn_scores, gt_bo
     # not sure if it a wise appending, but anyway i am not using it
     all_scores = tf.stack([all_scores, zeros],axis=0)
 
-  rois_per_image = settings["BATCH_SIZE"] 
-  fg_rois_per_image = np.round(settings["FG_FRACTION"] * rois_per_image)
-
   # Sample rois with classification labels and bounding box regression targets
   labels, rois, roi_scores, bbox_targets, bbox_inside_weights, ts_keep_inds = _sample_rois(
-    all_rois, all_scores, gt_boxes, fg_rois_per_image,
-    rois_per_image, _num_classes, settings)
+    all_rois, all_scores, gt_boxes, num_classes, settings)
 
   labels = labels.reshape(-1, 1)
-  bbox_inside_weights = bbox_inside_weights.reshape(-1, _num_classes * 4)
+  bbox_inside_weights = bbox_inside_weights.reshape(-1, num_classes * 4)
   bbox_outside_weights = np.array(bbox_inside_weights > 0).astype(np.float32)
 
   labels = tf.convert_to_tensor(labels,dtype=tf.int32)
@@ -73,7 +69,7 @@ def proposal_target_layer_tf(rpn_rois, rpn_scores, rcnn_rois, rcnn_scores, gt_bo
   
   return bbox_pred, cls_score, labels, bbox_targets, bbox_inside_weights, bbox_outside_weights
 
-def _all_rois(all_rois, all_scores, gt_boxes, fg_rois_per_image, rois_per_image, num_classes, settings):
+def _all_rois(all_rois, all_scores, gt_boxes, num_classes, settings):
   """
   Generate RoIs comprising foreground and background.
   """
@@ -98,10 +94,12 @@ def _all_rois(all_rois, all_scores, gt_boxes, fg_rois_per_image, rois_per_image,
 
   return labels, all_rois, all_scores, bbox_targets, bbox_inside_weights
 
-def _sample_rois(all_rois, all_scores, gt_boxes, fg_rois_per_image, rois_per_image, num_classes, settings):
+def _sample_rois(all_rois, all_scores, gt_boxes, num_classes, settings):
   """Generate a random sample of RoIs comprising foreground and background
   examples.
   """
+  rois_per_image = settings["BATCH_SIZE"] 
+  fg_rois_per_image = np.round(settings["FG_FRACTION"] * rois_per_image)
   # overlaps: (rois x gt_boxes)
   overlaps = overlap_tf(all_rois[:,1:5],gt_boxes[:,1:5])
   # find maximum in overlaps above gt_boxes
