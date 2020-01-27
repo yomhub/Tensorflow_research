@@ -412,7 +412,7 @@ class Faster_RCNN(tf.keras.Model):
     roi_feat = self.fc6_layer(roi_feat)
     # roi_feat = self.fc7_dp_layer(self.fc7_layer(roi_feat))
     roi_feat = self.fc7_layer(roi_feat)
-    cls_score = self.cls_layer(roi_feat)
+    cls_score = tf.clip_by_value(self.cls_layer(roi_feat),0.000001,1.0)
     cls_pred = tf.nn.softmax(cls_score)
     # get highest score 
     cls_prob = tf.argmax(cls_score,axis=1)
@@ -462,7 +462,8 @@ class Faster_RCNN(tf.keras.Model):
     cls_score, cls_pred, cls_prob, bbox_pred = self._region_classification(roi_feat,in_size)
 
     y_pred = {
-      # RPN
+      # RPN 
+      # (1,f_h,f_w,anchor_num*4) [y1, x1, y2, x2]
       "rpn_bbox_pred" : rpn_bbox_pred,
       # (1,h,w,ancnum*2), [negative...,positive...]
       "rpn_cls_score" : rpn_cls_score,

@@ -10,9 +10,9 @@ def draw_boxes(img,box):
     box: (image_num,box_num,4) tensor where 4 is
       [y_min, x_min, y_max, x_max]
   """
-  if(len(img.shape)<4):
+  if(len(img.shape)==3):
     img = tf.reshape(img,[1,]+img.shape)
-  if(len(box.shape)<3):
+  if(len(box.shape)==2):
     box = tf.reshape(box,[1,]+box.shape)
   if(img.dtype!=tf.float32 or img.dtype!=tf.float64):
     img = tf.cast(img,tf.float32)

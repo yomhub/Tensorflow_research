@@ -3,20 +3,15 @@ import tensorflow as tf
 import numpy as np
 from model.config import cfg
 from model.faster_rcnn import Faster_RCNN, RCNNLoss
+from tflib.log_tools import _str2time, _str2num, _auto_scalar, _auto_image
+from tflib.evaluate_tools import draw_boxes
 from datetime import datetime
 
 PROJ_PATH = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
 LOGS_PATH = os.path.join(PROJ_PATH,"log")
 MODEL_PATH = os.path.join(PROJ_PATH,"save_model")
 
-def _str2time(instr):
-  ymd,hms=instr.split('-')
-  return datetime(int(ymd[:4]), int(ymd[4:6]), int(ymd[6:]), int(hms[:2]), int(hms[2:4]), int(hms[4:6]))
-
-def _str2num(instr):
-  return [int(s) for s in instr.split() if s.isdigit()]
-
-class Trainer():
+class Trainer(object):
   def __init__(self,  
     logs_path = LOGS_PATH,
     model_path = MODEL_PATH,
@@ -69,7 +64,10 @@ class Trainer():
       self.opt = opt
     if(data_count!=None):
       self.data_count = data_count
-       
+
+  def train_action(self,x_single,y_single):
+    raise NotImplementedError
+
   def fit(self,
     x_train,y_train,
     model=None,loss=None,opt=None,
@@ -118,6 +116,8 @@ class Trainer():
       cur_cross_entropy = 0.0
       cur_loss_box = 0.0
       cur_loss = 0.0
+      cur_gtbox_num = 0.0
+
       for step in range(total_data):
         if(x_train[step].dtype!=tf.float32 or x_train[step].dtype!=tf.float64):
           x_train[step] = tf.cast(x_train[step],tf.float32)
@@ -126,18 +126,30 @@ class Trainer():
           y_pred = model(x_train[step])
           loss_value = loss(y_train[step], y_pred)
 
+        gt_prob = y_pred["rpn_cls_score1"]
+        gt_prob = tf.reshape(gt_prob,[-1,gt_prob.shape[-1]])
+        gt_prob = gt_prob[:,int(gt_prob.shape[-1]/2):]
+        gt_prob = tf.reshape(gt_prob,[-1])
+        gt_boxes = y_pred["rpn_bbox_pred1"]
+        gt_boxes = tf.reshape(gt_boxes,[-1,4])
+        gt_in = tf.reshape(tf.where(gt_prob>0.8),[-1])
+        bbx = tf.gather(gt_boxes,gt_in)
+        gtbox_num = int(gt_in.shape[0])
+
         if(not(self.isdebug)):
-          tf.summary.scalar("Loss",loss_value,step=cur_stp + step)
-          tf.summary.scalar("rpn_cross_entropy loss",loss.loss_detail["rpn_cross_entropy"],step=cur_stp + step)
-          tf.summary.scalar("rpn_loss_box loss",loss.loss_detail["rpn_loss_box"],step=cur_stp + step)
-          tf.summary.scalar("cross_entropy loss",loss.loss_detail["cross_entropy"],step=cur_stp + step)
-          tf.summary.scalar("loss_box loss",loss.loss_detail["loss_box"],step=cur_stp + step)
+          _auto_scalar(loss_value,cur_stp+step,"Loss")
+          _auto_scalar(loss.loss_detail,cur_stp+step)
+          _auto_scalar(gtbox_num, cur_stp+step, "GT_box_num")
+          if(gtbox_num>0 and int(y_train[step].shape[0]*2)>gtbox_num):
+            bximg = draw_boxes(x_train[step],bbx)
+            _auto_image(bximg,name="boxed_images",step=cur_stp+step,description="img in step {}".format(cur_stp+step))
 
         cur_rpn_cross_entropy += loss.loss_detail["rpn_cross_entropy"]
         cur_rpn_loss_box += loss.loss_detail["rpn_loss_box"]
         cur_cross_entropy += loss.loss_detail["cross_entropy"]
         cur_loss_box += loss.loss_detail["loss_box"]
         cur_loss += loss_value
+        cur_gtbox_num += gtbox_num
 
         grads = tape.gradient(loss_value, model.trainable_variables)
         if(True):
@@ -166,19 +178,17 @@ class Trainer():
       cur_cross_entropy /= total_data
       cur_loss_box /= total_data
       cur_loss /= total_data
+      cur_gtbox_num /= total_data
+
     else:
-      cur_stp += 1
       with tf.GradientTape(persistent=True) as tape:
         tape.watch(model.trainable_variables)
         y_pred = model(x_train)
         loss_value = loss(y_train, y_pred)
 
       if(not(self.isdebug)):
-        tf.summary.scalar("Loss",loss_value,step=cur_stp)
-        tf.summary.scalar("rpn_cross_entropy loss",loss.loss_detail["rpn_cross_entropy"],step=cur_stp)
-        tf.summary.scalar("rpn_loss_box loss",loss.loss_detail["rpn_loss_box"],step=cur_stp)
-        tf.summary.scalar("cross_entropy loss",loss.loss_detail["cross_entropy"],step=cur_stp)
-        tf.summary.scalar("loss_box loss",loss.loss_detail["loss_box"],step=cur_stp)
+        _auto_scalar(loss_value,cur_stp,"Loss")
+        _auto_scalar(loss.loss_detail,cur_stp)
 
       grads = tape.gradient(loss_value, model.trainable_variables)
       if(True):
@@ -199,6 +209,7 @@ class Trainer():
         opt.apply_gradients(zip(g_rpn_loss_box1, model.trainable_variables))
 
       opt.apply_gradients(zip(grads, model.trainable_variables))
+      cur_stp += 1
 
     tend = datetime.now() - tstart
     logger.write("======================================\n")
@@ -208,6 +219,7 @@ class Trainer():
     logger.write("Avg cur_rpn_loss_box = {}.\n".format(cur_rpn_loss_box))
     logger.write("Avg cur_cross_entropy = {}.\n".format(cur_cross_entropy))
     logger.write("Avg cur_loss_box = {}.\n".format(cur_loss_box))
+    logger.write("Avg cur_gtbox_num = {}.\n".format(cur_gtbox_num))
     logger.write("Time usage: {} Day {} Second.\n".format(tend.days,tend.seconds))
     logger.write("======================================\n\n")
     self.current_step = cur_stp

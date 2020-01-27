@@ -32,9 +32,12 @@ if __name__ == "__main__":
   #     )
   # front_feature = feature_model_t(tf.zeros((1,512,512,3),dtype=tf.float32))
   # # model(tf.zeros((1,512,512,3),dtype=tf.float32))
-  z=tf.zeros((2,2,9))
-  o=tf.ones((2,2,9))
-  rer=tf.stack([z,o],axis=-1)
+  ll = {
+    "t1":1,
+    "t2":2,
+  }
+  for itm in ll:
+    print(itm)
   
   print()
   
