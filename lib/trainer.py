@@ -11,7 +11,24 @@ PROJ_PATH = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
 LOGS_PATH = os.path.join(PROJ_PATH,"log")
 MODEL_PATH = os.path.join(PROJ_PATH,"save_model")
 
-class Trainer(object):
+def _chech_nan(tar):
+  if(type(tar)==list):
+    inc_list = []
+    for i in range(len(tar)):
+      if(tar[i]==None):
+        continue
+      inc=tf.where(tf.math.is_nan(tar[i]))
+      if(inc.shape[0]!=0):
+        inc_list.append([i,inc.shape[0]])
+    if(len(inc_list)!=0):
+      return inc_list
+  else:
+    inc=tf.where(tf.math.is_nan(tar))
+    if(inc.shape[0]!=0):
+      return inc.shape[0]
+  return 0
+
+class Trainer():
   def __init__(self,  
     logs_path = LOGS_PATH,
     model_path = MODEL_PATH,
@@ -36,7 +53,8 @@ class Trainer(object):
     else:
       self.file_writer = tf.summary.create_file_writer(self.logs_path)
       self.file_writer.set_as_default()
-
+    self.grad_dict = {}
+    self.loss_dict = {}
     self.current_step = 0
     self.batch = 0
     self.data_count = 0
@@ -66,6 +84,9 @@ class Trainer(object):
       self.data_count = data_count
 
   def train_action(self,x_single,y_single):
+    raise NotImplementedError
+  
+  def log_selfs(self):
     raise NotImplementedError
 
   def fit(self,
@@ -153,23 +174,31 @@ class Trainer(object):
 
         grads = tape.gradient(loss_value, model.trainable_variables)
         if(True):
-          g_rpn_cross_entropy = tape.gradient(loss.loss_detail["rpn_cross_entropy"], model.trainable_variables)
-          g_rpn_loss_box = tape.gradient(loss.loss_detail["rpn_loss_box"], model.trainable_variables)
-          g_rpn_cross_entropy1 = tape.gradient(loss.loss_detail["rpn_cross_entropy1"], model.trainable_variables)
-          g_rpn_loss_box1 = tape.gradient(loss.loss_detail["rpn_loss_box1"], model.trainable_variables)
-          g_cross_entropy = tape.gradient(loss.loss_detail["cross_entropy"], model.trainable_variables)
-          g_loss_box = tape.gradient(loss.loss_detail["loss_box"], model.trainable_variables)
+          for iname in loss.loss_detail:
+            self.grad_dict[iname]=tape.gradient(loss.loss_detail[iname], model.trainable_variables)
+            nan_ind = _chech_nan(self.grad_dict[iname])
+            if(type(nan_ind)==list or nan_ind!=0):
+              logger.write("======================================\n")
+              logger.write("Get NAN at batch {} setp {}.\n".format(self.batch+1,cur_stp+step))
+              logger.write("From loss: {}, loss value: {}.\n".format(iname,loss.loss_detail[iname]))
+              for iid in nan_ind:
+                logger.write("\tGradient by {} has {} Nan.\n".format(model.trainable_variables[iid[0]].name,iid[1]))
+                
+              logger.close()
+              return -1
+        
         if(self.isdebug):
-          opt.apply_gradients(zip(g_rpn_cross_entropy, model.trainable_variables))
-          opt.apply_gradients(zip(g_rpn_loss_box, model.trainable_variables))
-          opt.apply_gradients(zip(g_rpn_cross_entropy1, model.trainable_variables))
-          opt.apply_gradients(zip(g_rpn_loss_box1, model.trainable_variables))
+          
+          opt.apply_gradients(zip(self.grad_dict["rpn_cross_entropy"], model.trainable_variables))
+          opt.apply_gradients(zip(self.grad_dict["rpn_loss_box"], model.trainable_variables))
+          opt.apply_gradients(zip(self.grad_dict["rpn_cross_entropy1"], model.trainable_variables))
+          opt.apply_gradients(zip(self.grad_dict["rpn_loss_box1"], model.trainable_variables))
           # opt.apply_gradients(zip(grads, model.trainable_variables))
         else:
-          opt.apply_gradients(zip(g_rpn_cross_entropy, model.trainable_variables))
-          opt.apply_gradients(zip(g_rpn_loss_box, model.trainable_variables))
-          opt.apply_gradients(zip(g_rpn_cross_entropy1, model.trainable_variables))
-          opt.apply_gradients(zip(g_rpn_loss_box1, model.trainable_variables))
+          opt.apply_gradients(zip(self.grad_dict["rpn_cross_entropy"], model.trainable_variables))
+          opt.apply_gradients(zip(self.grad_dict["rpn_loss_box"], model.trainable_variables))
+          opt.apply_gradients(zip(self.grad_dict["rpn_cross_entropy1"], model.trainable_variables))
+          opt.apply_gradients(zip(self.grad_dict["rpn_loss_box1"], model.trainable_variables))
           # opt.apply_gradients(zip(grads, model.trainable_variables))
 
       cur_stp += step
@@ -225,6 +254,7 @@ class Trainer(object):
     self.current_step = cur_stp
     self.batch += 1
     logger.close()
+    return 0
 
   def save(self,model=None):
     self.set_trainer(model)

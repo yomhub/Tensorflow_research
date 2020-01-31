@@ -491,7 +491,8 @@ class RCNNLoss(tf.keras.losses.Loss):
       sigma_rpn: sigma in RPN bbox loss
     Inputs:
       y_true: Tensor with shape (total_gts,5)
-        where 5 is [class, xstart, ystart, w, h]
+        where 5 is [class, xstart, ystart, w, h] if gtformat=='xywh'
+        or [class, y1, x1, y2, x2] if gtformat=='yxyx' or 'yx'
         and class is class number
     
       y_pred: {
@@ -516,13 +517,17 @@ class RCNNLoss(tf.keras.losses.Loss):
         "num_classes": int, total num of class
       }
   """
-  def __init__(self, cfg, cfg_name, sigma_rpn=3.0):    
+  def __init__(self, cfg, cfg_name, sigma_rpn=3.0, gtformat='yxyx'):    
     try:
       self.cfg=cfg[cfg_name]
     except:
       self.cfg=cfg['TRAIN']
     self.sigma_rpn=sigma_rpn
     self.loss_detail={}
+    if(gtformat=='yxyx' or gtformat=='yx'):
+      self.gtformat='yxyx'
+    else:
+      self.gtformat='xywh'
     super(RCNNLoss, self).__init__()
   
   def _smooth_l1_loss(self, 
@@ -592,11 +597,13 @@ class RCNNLoss(tf.keras.losses.Loss):
     return rpn_cross_entropy, rpn_loss_box
 
   def call(self, y_true, y_pred):
-
-    # convert [class, xstart, ystart, w, h] to
-    # [y1, x1, y2, x2]
-    gt_boxes = xywh2yxyx(y_true[:,1:])
-    y_true = tf.stack([y_true[:,0],gt_boxes[:,0],gt_boxes[:,1],gt_boxes[:,2],gt_boxes[:,3]],axis=1)
+    if(self.gtformat=='xywh'):
+      # convert [class, xstart, ystart, w, h] to
+      # [y1, x1, y2, x2]
+      gt_boxes = xywh2yxyx(y_true[:,1:])
+      y_true = tf.stack([y_true[:,0],gt_boxes[:,0],gt_boxes[:,1],gt_boxes[:,2],gt_boxes[:,3]],axis=1)
+    else:
+      gt_boxes = y_true[:,1:]
 
     rpn_cross_entropy, rpn_loss_box = self._rpn_loss(
       gt_boxes=gt_boxes,

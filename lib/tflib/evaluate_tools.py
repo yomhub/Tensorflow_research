@@ -54,4 +54,18 @@ def fn_rate(pred_box,gt_box):
   pred_overlap = tf.reduce_max(overlap,axis=1)
   gt_overlap = tf.reduce_max(overlap,axis=0)
 
-  
+def load_and_preprocess_image(imgdir, outsize=None):
+  fd=""
+  if isinstance(imgdir,str):
+    fd=imgdir
+  else:
+    fd=str(imgdir.numpy())
+  image = tf.image.decode_image(tf.io.read_file(fd))
+  if(outsize!=None):
+    image = tf.image.resize(image, outsize)
+  return image
+
+def save_image(img, savedir):
+  if(len(img.shape)==4):
+    img = tf.reshape(img,img.shape[1:])
+  tf.io.write_file(savedir,tf.io.encode_jpeg(tf.cast(img,tf.uint8)))
