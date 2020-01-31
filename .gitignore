@@ -14,3 +14,4 @@ dataset.lnk
 *.jetson
 .vscode
 lab.py
+run.sh

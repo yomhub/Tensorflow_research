@@ -16,7 +16,7 @@ if __name__ == "__main__":
   parser.add_argument('--dataset', help='Choose dataset.', default="svt")
   parser.add_argument('--datax', type=int, help='Dataset output width.',default=1024)
   parser.add_argument('--datay', type=int, help='Dataset output height.',default=1024)
-  parser.add_argument('--step', type=int, help='Step size.',default=50)
+  parser.add_argument('--step', type=int, help='Step size.',default=5)
   parser.add_argument('--batch', type=int, help='Batch size.',default=20)
   # parser.add_argument('--savestep', type=int, help='Batch size.',default=20)
   parser.add_argument('--learnrate', type=float, help='Learning rate.',default=0.001)
@@ -26,8 +26,10 @@ if __name__ == "__main__":
   print("\t Step size: {},\n\t Batch size: {}.\n".format(args.step,args.batch))
   
   isdebug = args.debug
-  isdebug = True
+  # isdebug = True
   learning_rate = args.learnrate
+  trainer = Trainer(isdebug=isdebug,task_name="{}_with_{}".format(args.proposal,args.dataset))
+  optimizer = tf.keras.optimizers.Adam(learning_rate=learning_rate)
 
   if(args.dataset=='svt'):
     mydatalog = SVT(out_size=[args.datax,args.datay])
@@ -43,8 +45,6 @@ if __name__ == "__main__":
     model = last_model
     mydatalog.setconter(trainer.data_count)
 
-  optimizer = tf.keras.optimizers.Adam(learning_rate=learning_rate)
-  trainer = Trainer(isdebug=isdebug,task_name="{}_with_{}".format(args.proposal,args.dataset))
 
   model.compile(
     optimizer=optimizer,

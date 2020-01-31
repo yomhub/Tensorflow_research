@@ -174,6 +174,7 @@ class Trainer():
 
         grads = tape.gradient(loss_value, model.trainable_variables)
         if(True):
+          had_nan = False
           for iname in loss.loss_detail:
             self.grad_dict[iname]=tape.gradient(loss.loss_detail[iname], model.trainable_variables)
             nan_ind = _chech_nan(self.grad_dict[iname])
@@ -183,9 +184,11 @@ class Trainer():
               logger.write("From loss: {}, loss value: {}.\n".format(iname,loss.loss_detail[iname]))
               for iid in nan_ind:
                 logger.write("\tGradient by {} has {} Nan.\n".format(model.trainable_variables[iid[0]].name,iid[1]))
-                
-              logger.close()
-              return -1
+              if(iname!="loss_box" and iname!="cross_entropy"):
+                had_nan = True
+          if(had_nan):
+            logger.close()
+            return -1
         
         if(self.isdebug):
           

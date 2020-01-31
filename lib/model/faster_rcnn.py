@@ -78,7 +78,7 @@ class Faster_RCNN(tf.keras.Model):
     num_classes,
     feature_layer_name='vgg16',
     anchor_size=1,
-    anchor_ratio=[1,1.25,0.8],
+    anchor_ratio=[1,2,0.5],
     bx_choose="nms",
     max_outputs_num=2000,
     nms_thresh=0.1,
@@ -143,9 +143,9 @@ class Faster_RCNN(tf.keras.Model):
       )
     
     anchors = tf.constant(generate_anchors(
-      base_size=8,
+      base_size=8, # L3 Receptive field 8*8
       ratios=np.array(self.anchor_ratio), 
-      scales=np.array([1,1.5,2])), 
+      scales=np.array([0.5,1,2])), 
       dtype=tf.float32
       )                
     self.rpn1_anchors = tf.constant(generate_real_anchors(anchors,[height,width],[int(height/8),int(width/8)]))
@@ -171,7 +171,7 @@ class Faster_RCNN(tf.keras.Model):
 
     # =====For RPN layer=====
     anchors = tf.constant(generate_anchors(
-      base_size=16,
+      base_size=16, # L4 Receptive field 16*16
       ratios=np.array(self.anchor_ratio), 
       scales=np.array([0.5,0.8,1.1])), 
       dtype=tf.float32

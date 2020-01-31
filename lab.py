@@ -5,6 +5,7 @@ from mydataset.ctw import CTW
 from mydataset.svt import SVT
 from lib.model.faster_rcnn import Faster_RCNN, RCNNLoss
 from lib.tflib.evaluate_tools import draw_boxes, save_image
+from lib.tflib.log_tools import _auto_histogram
 # import matplotlib.pyplot as plt
 import argparse
 # 
@@ -25,8 +26,13 @@ if __name__ == "__main__":
   #   save_image(img,"{}.jpg".format(i))
   # rr = np.array([[0,1,1],[2,3,3]])
   mydatalog = SVT()
-  for i in range(4):
-    x_train, y_train = mydatalog.read_train_batch(70)
+  tt = mydatalog.caculate_avg()
+  with tf.summary.create_file_writer("logss") as we:
+    we.as_default()
+    _auto_histogram(tt,logname="svt")
+  # tf.summary.histogram(logname,dic_data,step=step)
+  # for i in range(4):
+  #   x_train, y_train = mydatalog.read_train_batch(70)
   # vgg16=tf.keras.applications.VGG16(weights='imagenet', include_top=False)
   # feature_model_t = tf.keras.Model(
   #       inputs=vgg16.input,
