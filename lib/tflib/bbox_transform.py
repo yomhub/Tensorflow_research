@@ -95,3 +95,18 @@ def clip_boxes_tf(boxes, im_info):
 @tf.function
 def xywh2yxyx(boxes):
   return tf.stack([boxes[:,1],boxes[:,0],boxes[:,1]+boxes[:,3],boxes[:,0]+boxes[:,2]],axis=1)
+
+# @tf.function
+def map2coordinate(boxes,org_cod,targ_cod):
+  """
+    Args:
+      boxes: (N,4) with [y1,x1,y2,x2]
+      org_cod: original coordinate [height，width]
+      targ_cod: target coordinate [height，width]
+    Return:
+      boxes: (N,4) with [y1,x1,y2,x2]
+  """
+  fact_x = targ_cod[1]/org_cod[1]
+  fact_y = targ_cod[0]/org_cod[0]
+  
+  return tf.stack([boxes[:,0]*fact_y,boxes[:,1]*fact_x,boxes[:,2]*fact_y,boxes[:,3]*fact_x],axis=1)

@@ -160,10 +160,14 @@ class Trainer():
         if(not(self.isdebug)):
           _auto_scalar(loss_value,cur_stp+step,"Loss")
           _auto_scalar(loss.loss_detail,cur_stp+step)
-          _auto_scalar(gtbox_num, cur_stp+step, "GT_box_num")
+          _auto_scalar(gtbox_num, cur_stp+step, "GT_box_num_pred")
+          _auto_scalar(y_train[step].shape[0], cur_stp+step, "GT_box_num_true")
+          _auto_scalar(gtbox_num / int(y_train[step].shape[0]), cur_stp+step, "GT_box_num_pred_div_true")
           if(gtbox_num>0 and int(y_train[step].shape[0]*2)>gtbox_num):
             bximg = draw_boxes(x_train[step],bbx)
-            _auto_image(bximg,name="boxed_images",step=cur_stp+step,description="img in step {}".format(cur_stp+step))
+            _auto_image(bximg,
+              name="boxed_images in step {}".format(cur_stp+step),
+              description="img in step {}".format(cur_stp+step))
 
         cur_rpn_cross_entropy += loss.loss_detail["rpn_cross_entropy"]
         cur_rpn_loss_box += loss.loss_detail["rpn_loss_box"]

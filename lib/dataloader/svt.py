@@ -155,4 +155,9 @@ class SVT():
         
     def setconter(self,conter):
         self._init_conter = conter
-
+        
+    def caculate_avg(self):
+        avg_area_pre_img = []
+        for tar in self._ytrain:
+            avg_area_pre_img.append(tf.reduce_mean(tar[:,3]*tar[:,4]/float(self.out_y)/float(self.out_x)))
+        return tf.convert_to_tensor(avg_area_pre_img)

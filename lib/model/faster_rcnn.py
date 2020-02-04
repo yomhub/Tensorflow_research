@@ -16,7 +16,7 @@ from layer_utils.generate_anchors import generate_anchors
 from layer_utils.snippets import generate_anchors_pre, generate_anchors_pre_tf
 from model.config import cfg
 from tflib.bbox_transform import bbox_transform_inv_tf, clip_boxes_tf, xywh2yxyx
-from tflib.anchor_target_layer import anchor_target_layer_tf
+from tflib.anchor_target_layer import anchor_target_layer_tf, point_anchor_target_layer_tf
 from tflib.proposal_target_layer import proposal_target_layer_tf
 from tflib.snippets import generate_real_anchors, score_convert
 from tflib.common import *
@@ -569,7 +569,7 @@ class RCNNLoss(tf.keras.losses.Loss):
     # convert [negative,...,positive,..] to [negitive,positive,...]
     rpn_cls_score = score_convert(rpn_cls_score)
     rpn_labels, rpn_bbox_targets, rpn_bbox_inside_weights, rpn_bbox_outside_weights \
-     = anchor_target_layer_tf(
+     = point_anchor_target_layer_tf(
        all_anchors = rpn_bbox_pred, 
        gt_boxes = gt_boxes, 
        im_info = img_sz, 
@@ -585,9 +585,8 @@ class RCNNLoss(tf.keras.losses.Loss):
       tf.nn.sparse_softmax_cross_entropy_with_logits(logits=rpn_cls_score, labels=rpn_label))
 
     # RPN, bbox loss
-    rpn_bbox_pred = tf.reshape(rpn_bbox_pred,[-1,4])
     rpn_loss_box = self._smooth_l1_loss(
-      bbox_pred=rpn_bbox_pred, 
+      bbox_pred=tf.gather(tf.reshape(rpn_bbox_pred,[-1,4]), rpn_select), 
       bbox_targets=rpn_bbox_targets, 
       bbox_inside_weights=rpn_bbox_inside_weights,
       bbox_outside_weights=rpn_bbox_outside_weights, 

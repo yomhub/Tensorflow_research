@@ -1,7 +1,7 @@
 import tensorflow as tf
 import numpy as np
 import matplotlib.pyplot as plt
-from tflib.overlap import overlap_tf
+from tflib.img_tools import overlap_tf
 
 def draw_boxes(img,box):
   """
