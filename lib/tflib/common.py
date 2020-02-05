@@ -18,3 +18,10 @@ def all2list(myvar,listlen=None):
     else:
       return myvar[:tlen]
   pass
+
+def chooseModel(choice,modelList):
+  choice = choice.lower()
+  for n in modelList:
+    if(choice==n.lower()):
+      return n
+  return modelList[0]

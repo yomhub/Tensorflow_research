@@ -6,7 +6,7 @@ from mydataset.ctw import CTW
 from mydataset.svt import SVT
 from lib.model.config import cfg
 from lib.model.faster_rcnn import Faster_RCNN, RCNNLoss
-from lib.trainer import Trainer
+from lib.frcnn_trainer import FRCNNTrainer
 
 if __name__ == "__main__":
 
@@ -26,9 +26,9 @@ if __name__ == "__main__":
   print("\t Step size: {},\n\t Batch size: {}.\n".format(args.step,args.batch))
   
   isdebug = args.debug
-  # isdebug = True
+  isdebug = True
   learning_rate = args.learnrate
-  trainer = Trainer(isdebug=isdebug,task_name="{}_with_{}".format(args.proposal,args.dataset))
+  trainer = FRCNNTrainer(isdebug=isdebug,task_name="{}_with_{}".format(args.proposal,args.dataset))
   optimizer = tf.keras.optimizers.Adam(learning_rate=learning_rate)
 
   if(args.dataset=='svt'):

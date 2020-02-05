@@ -69,3 +69,20 @@ def save_image(img, savedir):
   if(len(img.shape)==4):
     img = tf.reshape(img,img.shape[1:])
   tf.io.write_file(savedir,tf.io.encode_jpeg(tf.cast(img,tf.uint8)))
+
+def check_nan(tar):
+  if(type(tar)==list):
+    inc_list = []
+    for i in range(len(tar)):
+      if(tar[i]==None):
+        continue
+      inc=tf.where(tf.math.is_nan(tar[i]))
+      if(inc.shape[0]!=0):
+        inc_list.append([i,inc.shape[0]])
+    if(len(inc_list)!=0):
+      return inc_list
+  else:
+    inc=tf.where(tf.math.is_nan(tar))
+    if(inc.shape[0]!=0):
+      return inc.shape[0]
+  return 0

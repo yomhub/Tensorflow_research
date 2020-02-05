@@ -1,4 +1,6 @@
 import tensorflow as tf
+import numpy as np
+import math
 
 @tf.function
 def bbox_transform(ex_rois, gt_rois):
@@ -110,3 +112,35 @@ def map2coordinate(boxes,org_cod,targ_cod):
   fact_y = targ_cod[0]/org_cod[0]
   
   return tf.stack([boxes[:,0]*fact_y,boxes[:,1]*fact_x,boxes[:,2]*fact_y,boxes[:,3]*fact_x],axis=1)
+
+def labelLayer(numClass,layerShape,gtBox,imageShape=None):
+  """
+    Args: 
+      numClass: num of class
+      layerShape: layer shape [layer_height，layer_width]
+      gtBox: (total_gts,5) with [class, y1, x1, y2, x2]
+      imageShape: 
+        none with a normalized gtBox coordinate
+        or image shape [height，width]
+    Return:
+      tf.int32 tensor with (layer_height，layer_width)
+      where gt will label in [0,numClass-1]
+      and bg is -1
+  """
+  if(imageShape!=None):
+    fact_x = layerShape[1]/imageShape[1]
+    fact_y = layerShape[0]/imageShape[0]
+  else:
+    fact_x = layerShape[1]
+    fact_y = layerShape[0]
+  gtlabel = gtBox[:,0].numpy()
+  gtlabel = gtlabel.astype(np.int32)
+  bbox = tf.stack([gtBox[:,1]*fact_y,gtBox[:,2]*fact_x,gtBox[:,3]*fact_y,gtBox[:,4]*fact_x],axis=1).numpy()
+  label_np = np.full(layerShape,-1,np.int32)
+  for i in range(gtlabel.shape[0]):
+    x1 = max(math.floor(bbox[i,1]),0)
+    y1 = max(math.floor(bbox[i,0]),0)
+    y2 = min(math.ceil(bbox[i,2]),layerShape[0])
+    x2 = min(math.ceil(bbox[i,3]),layerShape[1])
+    label_np[y1:y2,x1:x2]=gtlabel[i]
+  return tf.convert_to_tensor(label_np,dtype=tf.int32)

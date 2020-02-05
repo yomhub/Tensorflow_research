@@ -21,14 +21,6 @@ from tflib.proposal_target_layer import proposal_target_layer_tf
 from tflib.snippets import generate_real_anchors, score_convert
 from tflib.common import *
 
-_LOCAL_DIR = os.path.split(__file__)[0]
-_DATASET_DIR= os.path.join(_LOCAL_DIR,'../','Dataset')
-_NETS_DIR=os.path.join(_LOCAL_DIR,'../','Dataset','pre-trained-nets')
-_NETS=['resnet_v2_152']
-_IOU_POSITIVE_THRESHOLD = 0.7
-_IOU_NEGATIVE_THRESHOLD = 0.3
-_MAX_OUTPUTS_NUM = 400 
-
 class Faster_RCNN(tf.keras.Model):
   """
     Args:
@@ -524,6 +516,7 @@ class RCNNLoss(tf.keras.losses.Loss):
       self.cfg=cfg['TRAIN']
     self.sigma_rpn=sigma_rpn
     self.loss_detail={}
+    gtformat = gtformat.lower()
     if(gtformat=='yxyx' or gtformat=='yx'):
       self.gtformat='yxyx'
     else:
