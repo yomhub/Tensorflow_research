@@ -7,14 +7,15 @@ from datetime import datetime
 from trainer import Trainer
 
 class FRCNNTrainer(Trainer):
-  def __init__(self,**kwargs):
-    Trainer.__init__(self,kwargs)
+  def __init__(self,task_name,isdebug):
+    Trainer.__init__(self,task_name=task_name,isdebug=isdebug)
     self.cur_rpn_cross_entropy = 0.0
     self.cur_rpn_loss_box = 0.0
     self.cur_cross_entropy = 0.0
     self.cur_loss_box = 0.0
     self.cur_loss = 0.0
     self.cur_gtbox_num = 0.0
+    # super(FRCNNTrainer,self).__init__(kwargs)
 
   def train_action(self,x_single,y_single,step,logger):
 
@@ -99,7 +100,7 @@ class FRCNNTrainer(Trainer):
     logger.write("Avg cur_cross_entropy = {}.\n".format(self.cur_cross_entropy))
     logger.write("Avg cur_loss_box = {}.\n".format(self.cur_loss_box))
     logger.write("Avg cur_gtbox_num = {}.\n".format(self.cur_gtbox_num))
-    logger.write("Time usage: {} Day {} Second.\n".format(tend.days,tend.seconds))
+    logger.write("Time usage: {} Day {} Second.\n".format(time_usage.days,time_usage.seconds))
     logger.write("======================================\n\n")
 
     self.cur_rpn_cross_entropy = 0.0

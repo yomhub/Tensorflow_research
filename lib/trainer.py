@@ -9,23 +9,6 @@ PROJ_PATH = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
 LOGS_PATH = os.path.join(PROJ_PATH,"log")
 MODEL_PATH = os.path.join(PROJ_PATH,"save_model")
 
-def _check_nan(tar):
-  if(type(tar)==list):
-    inc_list = []
-    for i in range(len(tar)):
-      if(tar[i]==None):
-        continue
-      inc=tf.where(tf.math.is_nan(tar[i]))
-      if(inc.shape[0]!=0):
-        inc_list.append([i,inc.shape[0]])
-    if(len(inc_list)!=0):
-      return inc_list
-  else:
-    inc=tf.where(tf.math.is_nan(tar))
-    if(inc.shape[0]!=0):
-      return inc.shape[0]
-  return 0
-
 class Trainer():
   def __init__(self,  
     logs_path = LOGS_PATH,
@@ -34,9 +17,9 @@ class Trainer():
     isdebug = False,
   ):
     """
-    Args:
-      logs_path: Tensor board dir.
-      task_name: Floder name under logs_path.
+      Args:
+        logs_path: Tensor board dir.
+        task_name: Floder name under logs_path.
 
     """
     super(Trainer,self).__init__()
