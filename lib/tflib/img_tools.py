@@ -1,17 +1,18 @@
 import tensorflow as tf
 import numpy as np
+import math
 
 @tf.function
 def overlap_tf(xbboxs,ybboxs):
   """
-  Inputs:
-    xbboxs: tensor wirh shape (M,4)
-    ybboxs: tensor wirh shape (N,4)
-      where 4 is (y1,x1,y2,x2)
-  Assert:
-    xbboxs.shape[-1]==ybboxs.shape[-1]==4
-  Output:
-    scores: shape (M,N)
+    Inputs:
+      xbboxs: tensor with shape (M,4)
+      ybboxs: tensor with shape (N,4)
+        where 4 is (y1,x1,y2,x2)
+    Assert:
+      xbboxs.shape[-1]==ybboxs.shape[-1]==4
+    Output:
+      scores: shape (M,N)
   """
   assert(xbboxs.shape[-1]==4 and ybboxs.shape[-1]==4)
   xbboxs_t = tf.transpose(
@@ -35,13 +36,56 @@ def overlap_tf(xbboxs,ybboxs):
   score = tf.where(unlap>0,area/unlap,0)
   return score
 
+def multi_overlap_pixel(xbboxs,ybboxs):
+  """
+    Inputs:
+      xbboxs: LIST of tensor with shape (M,4)
+        a area consist of M rectangles
+      ybboxs: tensor with shape (N,4)
+        where 4 is (y1,x1,y2,x2)
+    Assert:
+      xbboxs.shape[-1]==ybboxs.shape[-1]==4
+    Output:
+      LIST of scores tensor with shape (M,N)
+  """
+  if(type(xbboxs)!=list):
+    xbboxs = [xbboxs]
+  scores = []
+  for xbx in xbboxs:
+    overlap_pre = np.zeros((ybboxs.shape[0]))
+    x_y1,x_x1 = tf.reduce_min(xbx[:,0:2]).numpy()
+    x_y2,x_x2 = tf.reduce_max(xbx[:,2:4]).numpy()
+    xbx = xbx.numpy()
+    # (N)
+    lap_y = tf.minimum(x_y2,ybboxs[:,2])-tf.maximum(x_y1,ybboxs[:,0])+1.0
+    lap_x = tf.minimum(x_x2,ybboxs[:,3])-tf.maximum(x_x1,ybboxs[:,1])+1.0
+    incs = tf.where(tf.logical_and(lap_x>0,lap_y>0)).numpy()
+    if(incs.shape[0]==None):
+      scores.append(tf.convert_to_tensor(overlap_pre))
+      continue
+    for inc in incs:
+      ybx = ybboxs[inc].numpy()
+      y1 = math.floor(min(ybx[0],x_y1))
+      x1 = math.floor(min(ybx[1],x_x1))
+      y2 = math.ceil(max(ybx[2],x_y2))
+      x2 = math.ceil(max(ybx[3],x_x2))
+      label = np.zeros((y2-y1,x2-x1),dtype=np.int8)
+      for atom in xbx:
+        label[int(atom[0]-y1):int(atom[2]-y1),int(atom[1]-x1):int(atom[3]-x1)]=1
+      label[int(ybx[0]-y1):int(ybx[2]-y1),int(ybx[1]-x1):int(ybx[3]-x1)]+=1
+      overlap_pre[inc] = np.sum(label>1)/np.sum(label>0)
+    scores.append(tf.convert_to_tensor(overlap_pre))
+    
+  return scores
+
+
 # @tf.function
 def check_inside(boxes,img_size):
   """
     Args:
       boxes: (N,4) with [y1,x1,y2,x2]
       img_size: [height,width]
-    Return: Bool mask wirh (N) shape
+    Return: Bool mask with (N) shape
   """
   cond = tf.logical_and(
     tf.logical_and(boxes[:,0]>=0.0 , boxes[:,0]<=img_size[0]),

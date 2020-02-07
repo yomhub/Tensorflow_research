@@ -113,34 +113,75 @@ def map2coordinate(boxes,org_cod,targ_cod):
   
   return tf.stack([boxes[:,0]*fact_y,boxes[:,1]*fact_x,boxes[:,2]*fact_y,boxes[:,3]*fact_x],axis=1)
 
-def labelLayer(numClass,layerShape,gtBox,imageShape=None):
+def label_layer(layer_shape,gt_box,img_shape=None):
   """
     Args: 
-      numClass: num of class
-      layerShape: layer shape [layer_height，layer_width]
-      gtBox: (total_gts,5) with [class, y1, x1, y2, x2]
-      imageShape: 
-        none with a normalized gtBox coordinate
+      layer_shape: layer shape [layer_height，layer_width]
+      gt_box: (total_gts,5) with [class, y1, x1, y2, x2]
+      img_shape: 
+        none with a normalized gt_box coordinate
         or image shape [height，width]
     Return:
       tf.int32 tensor with (layer_height，layer_width)
       where gt will label in [0,numClass-1]
       and bg is -1
   """
-  if(imageShape!=None):
-    fact_x = layerShape[1]/imageShape[1]
-    fact_y = layerShape[0]/imageShape[0]
+  if(img_shape!=None):
+    fact_x = layer_shape[1]/img_shape[1]
+    fact_y = layer_shape[0]/img_shape[0]
   else:
-    fact_x = layerShape[1]
-    fact_y = layerShape[0]
-  gtlabel = gtBox[:,0].numpy()
+    fact_x = layer_shape[1]
+    fact_y = layer_shape[0]
+  gtlabel = gt_box[:,0].numpy()
   gtlabel = gtlabel.astype(np.int32)
-  bbox = tf.stack([gtBox[:,1]*fact_y,gtBox[:,2]*fact_x,gtBox[:,3]*fact_y,gtBox[:,4]*fact_x],axis=1).numpy()
-  label_np = np.full(layerShape,-1,np.int32)
+  bbox = tf.stack([gt_box[:,1]*fact_y,gt_box[:,2]*fact_x,gt_box[:,3]*fact_y,gt_box[:,4]*fact_x],axis=1).numpy()
+  label_np = np.full(layer_shape,-1,np.int32)
   for i in range(gtlabel.shape[0]):
     x1 = max(math.floor(bbox[i,1]),0)
     y1 = max(math.floor(bbox[i,0]),0)
-    y2 = min(math.ceil(bbox[i,2]),layerShape[0])
-    x2 = min(math.ceil(bbox[i,3]),layerShape[1])
+    y2 = min(math.ceil(bbox[i,2]),layer_shape[0])
+    x2 = min(math.ceil(bbox[i,3]),layer_shape[1])
     label_np[y1:y2,x1:x2]=gtlabel[i]
   return tf.convert_to_tensor(label_np,dtype=tf.int32)
+  
+def build_boxex_from_path(cls_prb,box_prd,ort_map,target_class,threshold=0.5):
+  """
+    Args:
+      cls_prb: tesnor with (1,h,w,num_class)
+      box_prd: tesnor with (1,h,w,(num_class-1)*4)
+        where 4 is [y1,x1,y2,x2]
+      ort_map: tesnor with (1,h,w,direction)
+        where direction=4 is [Up,Left,Down,Right]
+        where direction=8 is [Up,upleft,Left,downleft,Down,downright,Right,upright]
+    Return:
+      list of p[]
+  """
+  direction = ort_map.shape[-1]
+  if(ort_map.shape[-1]==8):
+    direction={
+      # [dy,dx], Up,upleft,Left,downleft
+      0:[-1,0],1:[-1,-1],2:[0,-1],3:[1,-1],
+      # Down,downright,Right,upright
+      4:[1,0],5:[1,1],6:[0,1],7:[-1,1],
+    }
+  else:
+    direction={
+      # [dy,dx], Up,Left,Down,Right
+      0:[-1,0],1:[0,-1],2:[1,0],3:[0,1],
+    }
+  
+  path_list = []
+  path_label_list = []
+  cls_prb = tf.reshape(cls_prb,cls_prb.shape[1:]).numpy()
+  incs = tf.where(cls_prb[:,:,target_class]>threshold).numpy()
+  mask = np.full((cls_prb.shape[-3],cls_prb.shape[-2]),-1,dtype=np.int16)
+  mask = np.select(cls_prb[:,:,target_class]>threshold,0,-1)
+
+  ort_map = ort_map.numpy()
+  for inc in incs:
+    dirps = ort_map[inc[0],inc[1]]
+    dpoint = np.where(dirps==dirps.max)
+    dy,dx = direction[dpoint]
+    mask
+
+  return path_list

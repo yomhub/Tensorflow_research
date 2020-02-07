@@ -6,10 +6,8 @@ import sys
 import tensorflow as tf
 import numpy as np
 import math
-from layer_utils.generate_anchors import generate_anchors
-from layer_utils.snippets import generate_anchors_pre, generate_anchors_pre_tf
 from model.config import cfg
-from tflib.bbox_transform import bbox_transform_inv_tf, clip_boxes_tf, xywh2yxyx, labelLayer
+from tflib.bbox_transform import bbox_transform_inv_tf, clip_boxes_tf, xywh2yxyx, label_layer, build_boxex_from_path
 from tflib.anchor_target_layer import anchor_target_layer_tf, point_anchor_target_layer_tf
 from tflib.proposal_target_layer import proposal_target_layer_tf
 from tflib.snippets import generate_real_anchors, score_convert
@@ -20,7 +18,8 @@ class Label_RCNN(tf.keras.Model):
   def __init__(self,
     num_classes=2,
     feature_layer_name='vgg16',
-    bx_choose="nms",
+    bx_ths=0.7,
+    direction=8,
     max_outputs_num=2000,
     nms_thresh=0.6,
     ):
@@ -32,28 +31,33 @@ class Label_RCNN(tf.keras.Model):
       self.feature_layer_name='vgg16'
       # final chs is 512
     self.num_classes = int(num_classes)
-
+    self.bx_ths = bx_ths
+    self.direction = direction
   def build(self,input_shape):
-    if(len(input_shape)==4):
-      height=input_shape[1]
-      width=input_shape[2]
-    else:
-      height=input_shape[0]
-      width=input_shape[1]
-
+    
     if(self.feature_layer_name=='vgg16'):
       vgg16=tf.keras.applications.VGG16(weights='imagenet', include_top=False)
       self.feature_model = tf.keras.Model(
         inputs=vgg16.input,
         outputs=[
+          # vgg16.get_layer('block2_conv2').output,
+          # 2*2 128
           vgg16.get_layer('block3_conv3').output,
+          # 4*4 256
           # vgg16.get_layer('block3_pool').output,
+          # 8*8 256
           vgg16.get_layer('block4_conv3').output,
+          # 8*8 512
           # vgg16.get_layer('block4_pool').output,
+          # 16*16 512
           vgg16.get_layer('block5_conv3').output
+          # 16*16 512
         ],
         name=self.feature_layer_name
       )
+      self.rpn_L1_wshape = [1,1,256]
+      self.rpn_L2_wshape = [1,1,512]
+      self.rpn_L3_wshape = [1,1,512]
     elif(self.feature_layer_name=='resnet'):
       rn=tf.keras.applications.resnet_v2.ResNet101V2()
         # rn.get_layer("conv1_pad"), rn.get_layer("conv1_conv"), rn.get_layer("pool1_pad"), rn.get_layer("pool1_pool"),
@@ -77,50 +81,75 @@ class Label_RCNN(tf.keras.Model):
                             padding="same",
                             )
     self.rpn_L1_cls_score = tf.keras.layers.Conv2D(filters=self.num_classes,
-                             kernel_size=(1, 1),
+                            kernel_size=(1, 1),
                             activation=None,
+                            padding='same', 
                             name="rpn_L1_cls_score",
                             )
-    self.rpn_L1_bbox_pred = tf.keras.layers.Conv2D(filters=self.num_classes*4,
+    self.rpn_L1_bbox_pred = tf.keras.layers.Conv2D(filters=(self.num_classes-1)*4,
                             kernel_size=(1, 1),
                             padding='same', 
                             activation=None,
                             name="rpn_L1_bbox_pred",
                             )                           
+    
+    self.rpn_L1_window = tf.keras.models.Sequential(
+      [
+        tf.keras.layers.Dense(256,input_shape=self.rpn_L1_wshape,activation=tf.nn.relu),
+        tf.keras.layers.Dense(self.direction,activation=None),
+      ],
+      "rpn_L1_window_direction"
+    )
     self.rpn_L2_conv = tf.keras.layers.Conv2D(filters=512,
                             kernel_size=(3, 3),
                             activation=tf.nn.relu,
-                            name="rpn_L2_conv",
                             padding="same",
+                            name="rpn_L2_conv",
                             )
     self.rpn_L2_cls_score = tf.keras.layers.Conv2D(filters=self.num_classes,
                             kernel_size=(1, 1),
                             activation=None,
+                            padding='same', 
                             name="rpn_L2_cls_score",
                             )
-    self.rpn_L2_bbox_pred = tf.keras.layers.Conv2D(filters=self.num_classes*4,
+    self.rpn_L2_bbox_pred = tf.keras.layers.Conv2D(filters=(self.num_classes-1)*4,
                             kernel_size=(1, 1),
                             padding='same', 
                             activation=None,
                             name="rpn_L2_bbox_pred",
                             )
+    self.rpn_L2_window = tf.keras.models.Sequential(
+      [
+        tf.keras.layers.Dense(512,input_shape=self.rpn_L2_wshape,activation=tf.nn.relu),
+        tf.keras.layers.Dense(self.direction,activation=None),
+      ],
+      "rpn_L2_window_direction"
+    )
     self.rpn_L3_conv = tf.keras.layers.Conv2D(filters=512,
                             kernel_size=(3, 3),
                             activation=tf.nn.relu,
-                            name="rpn_L3_conv",
                             padding="same",
+                            name="rpn_L3_conv",
                             )
     self.rpn_L3_cls_score = tf.keras.layers.Conv2D(filters=self.num_classes,
                             kernel_size=(1, 1),
                             activation=None,
+                            padding='same', 
                             name="rpn_L3_cls_score",
                             )
-    self.rpn_L3_bbox_pred = tf.keras.layers.Conv2D(filters=self.num_classes*4,
+    self.rpn_L3_bbox_pred = tf.keras.layers.Conv2D(filters=(self.num_classes-1)*4,
                             kernel_size=(1, 1),
                             padding='same', 
                             activation=None,
                             name="rpn_L3_bbox_pred",
-                            )                                                        
+                            )     
+    self.rpn_L3_window = tf.keras.models.Sequential(
+      [
+        tf.keras.layers.Dense(512,input_shape=self.rpn_L3_wshape,activation=tf.nn.relu),
+        tf.keras.layers.Dense(self.direction,activation=None),
+      ],
+      "rpn_L3_window_direction"
+    )                
     super(Label_RCNN, self).build(input_shape)
 
   def call(self, inputs):
@@ -130,21 +159,30 @@ class Label_RCNN(tf.keras.Model):
     l1_feat = self.rpn_L1_conv(l1_feat)
     l2_feat = self.rpn_L2_conv(l2_feat)
     l3_feat = self.rpn_L3_conv(l3_feat)
+
     l1_score = self.rpn_L1_cls_score(l1_feat)
     l1_bbox = self.rpn_L1_bbox_pred(l1_feat)
+    l1_ort = tf.nn.softmax(self.rpn_L1_window(l1_feat),axis=-1)
     l2_score = self.rpn_L2_cls_score(l2_feat)
     l2_bbox = self.rpn_L2_bbox_pred(l2_feat)
+    l2_ort = tf.nn.softmax(self.rpn_L2_window(l2_feat),axis=-1)
     l3_score = self.rpn_L3_cls_score(l3_feat)
     l3_bbox = self.rpn_L3_bbox_pred(l3_feat)
-    y_pred = {
+    l3_ort = tf.nn.softmax(self.rpn_L3_window(l3_feat),axis=-1)
+  
+    self.y_pred = {
       "l1_score" : l1_score,
       "l1_bbox" : l1_bbox,
+      "l1_ort" : l1_ort,
       "l2_score" : l2_score,
       "l2_bbox" : l2_bbox,
+      "l2_ort" : l2_ort,
       "l3_score" : l3_score,
       "l3_bbox" : l3_bbox,
+      "l3_ort" : l3_ort,
     }
-    return y_pred
+    # return l1_score,l1_bbox,l1_ort,l2_score,l2_bbox,l2_ort,l3_score,l3_bbox,l3_ort
+    return self.y_pred
 
 class LabelLoss(tf.keras.losses.Loss):
   def __init__(self,imge_size,gtformat='yxyx'):
@@ -157,7 +195,7 @@ class LabelLoss(tf.keras.losses.Loss):
     self.imge_size = imge_size
 
   def _label_loss(self,pred_score,y_true):
-    labels = labelLayer(pred_score.shape[-1],pred_score.shape[1:3],y_true,self.imge_size)
+    labels = label_layer(pred_score.shape[1:3],y_true,self.imge_size)
     labels = tf.reshape(labels,[-1])
     select = tf.reshape(tf.where(tf.not_equal(labels, -1)),[-1])
     score = tf.gather(tf.reshape(pred_score,[-1]), select)
@@ -165,6 +203,9 @@ class LabelLoss(tf.keras.losses.Loss):
     return tf.reduce_mean(
       tf.nn.sparse_softmax_cross_entropy_with_logits(logits=score, labels=labels))
     
+  def _boxes_loss(self,cls_prb,box_prd,ort_map):
+    box_chan = build_boxex_from_path(cls_prb,box_prd,ort_map,1)
+
   def call(self, y_true, y_pred):
     if(self.gtformat=='xywh'):
       # convert [class, xstart, ystart, w, h] to
@@ -176,4 +217,6 @@ class LabelLoss(tf.keras.losses.Loss):
     l2_loss = self._label_loss(y_pred["l2_score"],y_true)
     l3_loss = self._label_loss(y_pred["l3_score"],y_true)
     
+
+
     return l1_loss + l2_loss + l3_loss

@@ -12,8 +12,7 @@ import os, sys
 import tensorflow as tf
 import numpy as np
 import math
-from layer_utils.generate_anchors import generate_anchors
-from layer_utils.snippets import generate_anchors_pre, generate_anchors_pre_tf
+from tflib.generate_anchors import generate_anchors
 from model.config import cfg
 from tflib.bbox_transform import bbox_transform_inv_tf, clip_boxes_tf, xywh2yxyx
 from tflib.anchor_target_layer import anchor_target_layer_tf, point_anchor_target_layer_tf
