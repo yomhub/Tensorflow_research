@@ -144,10 +144,10 @@ def label_layer(layer_shape,gt_box,img_shape=None):
     label_np[y1:y2,x1:x2]=gtlabel[i]
   return tf.convert_to_tensor(label_np,dtype=tf.int32)
   
-def build_boxex_from_path(cls_prb,box_prd,ort_map,target_class,threshold=0.5):
+def build_boxex_from_path(cls_prb,box_prd,ort_map,target_class,cls_threshold=0.7,dir_threshold=0.7):
   """
     Args:
-      cls_prb: tesnor with (1,h,w,num_class)
+      cls_prb: tesnor with (1,h,w,num_class), possibilities
       box_prd: tesnor with (1,h,w,(num_class-1)*4)
         where 4 is [y1,x1,y2,x2]
       ort_map: tesnor with (1,h,w,direction)
@@ -169,19 +169,74 @@ def build_boxex_from_path(cls_prb,box_prd,ort_map,target_class,threshold=0.5):
       # [dy,dx], Up,Left,Down,Right
       0:[-1,0],1:[0,-1],2:[1,0],3:[0,1],
     }
-  
+  imgh = cls_prb.shape[-3]
+  imgw = cls_prb.shape[-2]
   path_list = []
-  path_label_list = []
-  cls_prb = tf.reshape(cls_prb,cls_prb.shape[1:]).numpy()
-  incs = tf.where(cls_prb[:,:,target_class]>threshold).numpy()
-  mask = np.full((cls_prb.shape[-3],cls_prb.shape[-2]),-1,dtype=np.int16)
-  mask = np.select(cls_prb[:,:,target_class]>threshold,0,-1)
-
+  cluster_count=1
+  if(len(box_prd.shape)==4):
+    box_prd = tf.reshape(box_prd,box_prd.shape[1:])
+  if(len(ort_map.shape)==4):
+    ort_map = tf.reshape(ort_map,ort_map.shape[1:])
+  if(len(cls_prb.shape)==4):
+    cls_prb = tf.reshape(cls_prb,cls_prb.shape[1:])
+  cls_prb = cls_prb.numpy()
+  incs = tf.where(cls_prb[:,:,target_class]>cls_threshold).numpy()
+  mask = np.full((imgh,imgw),-1,dtype=np.int16)
+  mask[cls_prb[:,:,target_class]>cls_threshold] = 0
   ort_map = ort_map.numpy()
   for inc in incs:
     dirps = ort_map[inc[0],inc[1]]
-    dpoint = np.where(dirps==dirps.max)
-    dy,dx = direction[dpoint]
-    mask
+    dpoint = np.where(dirps>dir_threshold)[0]
+    if(dpoint.shape[0]==0):
+      continue
+    my_label = mask[inc[0],inc[1]]
+    if(my_label!=0):
+      # ONLY point itself can add box to list
+      path_list[my_label-1]=tf.concat([path_list[my_label-1],tf.reshape(box_prd[inc[0],inc[1],:],[1,4])],axis=0)
 
-  return path_list
+    for dpt in dpoint:
+      dy,dx = direction[dpt]
+      if((inc[0]+dy)<0 or (inc[0]+dy)>=imgh or (inc[1]+dx)<0 or (inc[1]+dx)>=imgw):
+        continue
+      if(my_label!=0 and mask[inc[0]+dy,inc[1]+dx]==0):
+        # my_label==label, label neighbor
+        mask[inc[0]+dy,inc[1]+dx] = my_label
+
+      elif(mask[inc[0]+dy,inc[1]+dx]>0):
+        # my_label==0, find one neighbor
+        mask[inc[0],inc[1]] = mask[inc[0]+dy,inc[1]+dx]
+        my_label = mask[inc[0]+dy,inc[1]+dx]
+        path_list[my_label-1]=tf.concat([path_list[my_label-1],tf.reshape(box_prd[inc[0],inc[1],:],[1,4])],axis=0)
+        break
+
+    if(my_label==0):
+      # father
+      mask[inc[0],inc[1]]=cluster_count
+      my_label=cluster_count
+      path_list+=[tf.reshape(box_prd[inc[0],inc[1],:],[1,4])]
+      for dpt in dpoint:
+        dy,dx = direction[dpt]
+        if((inc[0]+dy)<0 or (inc[0]+dy)>=imgh or (inc[1]+dx)<0 or (inc[1]+dx)>=imgw):
+          continue
+        # label all neighbor
+        if(mask[inc[0]+dy,inc[1]+dx]==0):
+          mask[inc[0]+dy,inc[1]+dx]=my_label
+      cluster_count+=1
+  # mask = tf.convert_to_tensor(mask,dtype=tf.int32)
+  return path_list, mask
+
+def get_label_from_mask(gt_box,mask):
+  """
+    Args:
+      gt_box: tensor (total_gts,4) with [y1, x1, y2, x2]
+      mask: (height,width) with [label]
+    return:
+      list [total_gts] with the most label
+  """
+  gt_box = gt_box.numpy()
+  gt_label_list = []
+  for box in gt_box:
+    submk = mask[math.floor(box[0]):math.ceil(box[2]),math.floor(box[1]):math.ceil(box[3])].reshape([-1])
+    inc = np.argmax(np.bincount(submk))
+    gt_label_list += [inc]
+  return gt_label_list

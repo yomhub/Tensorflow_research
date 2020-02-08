@@ -7,7 +7,8 @@ import tensorflow as tf
 import numpy as np
 import math
 from model.config import cfg
-from tflib.bbox_transform import bbox_transform_inv_tf, clip_boxes_tf, xywh2yxyx, label_layer, build_boxex_from_path
+# from tflib.bbox_transform import bbox_transform_inv_tf, clip_boxes_tf, xywh2yxyx, label_layer, build_boxex_from_path, map2coordinate
+from tflib.bbox_transform import *
 from tflib.anchor_target_layer import anchor_target_layer_tf, point_anchor_target_layer_tf
 from tflib.proposal_target_layer import proposal_target_layer_tf
 from tflib.snippets import generate_real_anchors, score_convert
@@ -198,13 +199,17 @@ class LabelLoss(tf.keras.losses.Loss):
     labels = label_layer(pred_score.shape[1:3],y_true,self.imge_size)
     labels = tf.reshape(labels,[-1])
     select = tf.reshape(tf.where(tf.not_equal(labels, -1)),[-1])
-    score = tf.gather(tf.reshape(pred_score,[-1]), select)
+    score = tf.gather(tf.reshape(pred_score,[-1,2]), select)
     labels = tf.gather(labels,select)
     return tf.reduce_mean(
       tf.nn.sparse_softmax_cross_entropy_with_logits(logits=score, labels=labels))
     
-  def _boxes_loss(self,cls_prb,box_prd,ort_map):
-    box_chan = build_boxex_from_path(cls_prb,box_prd,ort_map,1)
+  def _boxes_loss(self,cls_prb,box_prd,ort_map,y_true):
+    path_list, mask_np = build_boxex_from_path(cls_prb,box_prd,ort_map,1)
+    y_true = map2coordinate(y_true[1:],self.imge_size,cls_prb.shape[1:3])
+    label_list = get_label_from_mask(y_true,mask_np)
+    
+    return 0
 
   def call(self, y_true, y_pred):
     if(self.gtformat=='xywh'):
@@ -216,7 +221,7 @@ class LabelLoss(tf.keras.losses.Loss):
     l1_loss = self._label_loss(y_pred["l1_score"],y_true)
     l2_loss = self._label_loss(y_pred["l2_score"],y_true)
     l3_loss = self._label_loss(y_pred["l3_score"],y_true)
-    
+    l1_box_loss = self._boxes_loss(y_pred["l1_score"],y_pred["l1_bbox"],y_pred["l1_ort"],y_true)
 
 
     return l1_loss + l2_loss + l3_loss
