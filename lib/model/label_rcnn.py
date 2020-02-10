@@ -215,20 +215,20 @@ class LRCNNLoss(tf.keras.losses.Loss):
       gt_boxes = xywh2yxyx(y_true[:,1:])
       y_true = tf.stack([y_true[:,0],gt_boxes[:,0],gt_boxes[:,1],gt_boxes[:,2],gt_boxes[:,3]],axis=1)
 
-    l1_loss = self._label_loss(y_pred["l1_score"],y_true)
-    l2_loss = self._label_loss(y_pred["l2_score"],y_true)
-    l3_loss = self._label_loss(y_pred["l3_score"],y_true)
+    l1_label_loss = self._label_loss(y_pred["l1_score"],y_true)
+    l2_label_loss = self._label_loss(y_pred["l2_score"],y_true)
+    l3_label_loss = self._label_loss(y_pred["l3_score"],y_true)
     l1_box_loss = self._boxes_loss(y_pred["l1_bbox"],y_true[:,1:])
     l2_box_loss = self._boxes_loss(y_pred["l2_bbox"],y_true[:,1:])
     l3_box_loss = self._boxes_loss(y_pred["l3_bbox"],y_true[:,1:])
 
     self.loss_detail={
-      "l1_loss" : l1_loss,
-      "l2_loss" : l2_loss,
-      "l3_loss" : l3_loss,
+      "l1_label_loss" : l1_label_loss,
+      "l2_label_loss" : l2_label_loss,
+      "l3_label_loss" : l3_label_loss,
       "l1_box_loss" : l1_box_loss,
       "l2_box_loss" : l2_box_loss,
       "l3_box_loss" : l3_box_loss,
     }
 
-    return l1_loss + l2_loss + l3_loss + l1_box_loss + l2_box_loss + l3_box_loss
+    return l1_label_loss + l2_label_loss + l3_label_loss + l1_box_loss + l2_box_loss + l3_box_loss
