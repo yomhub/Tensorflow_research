@@ -154,7 +154,7 @@ def build_boxex_from_path(cls_prb,box_prd,ort_map,target_class,cls_threshold=0.7
         where direction=4 is [Up,Left,Down,Right]
         where direction=8 is [Up,upleft,Left,downleft,Down,downright,Right,upright]
     Return:
-      list of p[]
+      list of predicted tesnor with (M,4) where 4 is [y1, x1, y2, x2] in org size
   """
   direction = ort_map.shape[-1]
   if(ort_map.shape[-1]==8):
@@ -231,7 +231,7 @@ def get_label_from_mask(gt_box,mask):
       gt_box: tensor (total_gts,4) with [y1, x1, y2, x2]
       mask: (height,width) with [label]
     return:
-      list [total_gts] with the most label
+      list [total_gts] with the highest label
   """
   gt_box = gt_box.numpy()
   gt_label_list = []
@@ -240,3 +240,45 @@ def get_label_from_mask(gt_box,mask):
     inc = np.argmax(np.bincount(submk))
     gt_label_list += [inc]
   return gt_label_list
+
+def pre_box_loss(gt_box, pred_map, org_size=None):
+  """
+    Args:
+      gt_box: tensor (total_gts,4) with [y1, x1, y2, x2]
+      pred_map: predict layer tensor (h,w,4) with [y1, x1, y2, x2]
+      org_size: original image size (h,w)
+    Return:
+      loss value
+  """
+  pred_map = tf.reshape(pred_map,pred_map.shape[-3:])
+  feat_h,feat_w = pred_map.shape[-3:-1]
+  if(org_size==None):
+    cube_h,cube_w = 1,1
+  else:
+    cube_h,cube_w = pred_map.shape[-3]/org_size[0],pred_map.shape[-2]/org_size[1]
+    
+  gt_box = gt_box.numpy()
+  abs_det = []
+  det_cx,det_cy = tf.meshgrid(tf.range(0,feat_w,dtype=tf.float32)/cube_w,tf.range(0,feat_h,dtype=tf.float32)/cube_h)
+  # det_cy = np.arange(0,feat_h,step=cube_h,dtype=np.int16)
+  # det_cx = np.arange(0,feat_w,step=cube_w,dtype=np.int16)
+  # det_cy,det_cx = np.meshgrid(np.arange(0,feat_h,dtype=np.int16),np.arange(0,feat_w,dtype=np.int16))
+  for box in gt_box:
+    y_start,y_end = math.floor(box[0]*cube_h),math.ceil(box[2]*cube_h)
+    x_start,x_end = math.floor(box[1]*cube_w),math.ceil(box[3]*cube_w)
+    tmp_det = tf.math.reduce_sum(tf.math.abs(pred_map[y_start,x_start:x_end,0] - box[0])  \
+      +tf.math.abs(pred_map[y_end,x_start:x_end,2] - box[2])) \
+      +tf.math.reduce_sum(tf.math.abs(pred_map[y_start:y_end,x_start,1] - box[1]) \
+      +tf.math.abs(pred_map[y_start:y_end,x_end,3] - box[3]))
+    y_start+=1
+    y_end-=1
+    x_start+=1
+    x_end-=1
+    if(y_start<y_end and x_start<x_end):
+      tmp_det += tf.math.reduce_sum(tf.math.abs(pred_map[y_start,x_start:x_end,0] - det_cy[y_start:y_end,x_start:x_end]) \
+        + tf.math.abs(pred_map[y_end,x_start:x_end,2] - det_cy[(y_start+1):(y_end+1),(x_start+1):(x_end+1)])) \
+        + tf.math.reduce_sum(tf.math.abs(pred_map[y_start,x_start:x_end,1] - det_cx[y_start:y_end,x_start:x_end]) \
+        + tf.math.abs(pred_map[y_end,x_start:x_end,3] - det_cx[(y_start+1):(y_end+1),(x_start+1):(x_end+1)]))
+    abs_det+=[tmp_det]
+  return tf.convert_to_tensor(abs_det)
+

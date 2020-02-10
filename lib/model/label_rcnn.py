@@ -185,9 +185,9 @@ class Label_RCNN(tf.keras.Model):
     # return l1_score,l1_bbox,l1_ort,l2_score,l2_bbox,l2_ort,l3_score,l3_bbox,l3_ort
     return self.y_pred
 
-class LabelLoss(tf.keras.losses.Loss):
+class LRCNNLoss(tf.keras.losses.Loss):
   def __init__(self,imge_size,gtformat='yxyx'):
-    super(LabelLoss, self).__init__()
+    super(LRCNNLoss, self).__init__()
     gtformat = gtformat.lower()
     if(gtformat=='yxyx' or gtformat=='yx'):
       self.gtformat='yxyx'
@@ -204,12 +204,9 @@ class LabelLoss(tf.keras.losses.Loss):
     return tf.reduce_mean(
       tf.nn.sparse_softmax_cross_entropy_with_logits(logits=score, labels=labels))
     
-  def _boxes_loss(self,cls_prb,box_prd,ort_map,y_true):
-    path_list, mask_np = build_boxex_from_path(cls_prb,box_prd,ort_map,1)
-    y_true = map2coordinate(y_true[1:],self.imge_size,cls_prb.shape[1:3])
-    label_list = get_label_from_mask(y_true,mask_np)
-    
-    return 0
+  def _boxes_loss(self,box_prd,y_true):
+    loss_value = pre_box_loss(y_true,box_prd,self.imge_size)
+    return tf.math.reduce_sum(loss_value)
 
   def call(self, y_true, y_pred):
     if(self.gtformat=='xywh'):
@@ -221,7 +218,17 @@ class LabelLoss(tf.keras.losses.Loss):
     l1_loss = self._label_loss(y_pred["l1_score"],y_true)
     l2_loss = self._label_loss(y_pred["l2_score"],y_true)
     l3_loss = self._label_loss(y_pred["l3_score"],y_true)
-    l1_box_loss = self._boxes_loss(y_pred["l1_score"],y_pred["l1_bbox"],y_pred["l1_ort"],y_true)
+    l1_box_loss = self._boxes_loss(y_pred["l1_bbox"],y_true[:,1:])
+    l2_box_loss = self._boxes_loss(y_pred["l2_bbox"],y_true[:,1:])
+    l3_box_loss = self._boxes_loss(y_pred["l3_bbox"],y_true[:,1:])
 
+    self.loss_detail={
+      "l1_loss" : l1_loss,
+      "l2_loss" : l2_loss,
+      "l3_loss" : l3_loss,
+      "l1_box_loss" : l1_box_loss,
+      "l2_box_loss" : l2_box_loss,
+      "l3_box_loss" : l3_box_loss,
+    }
 
-    return l1_loss + l2_loss + l3_loss
+    return l1_loss + l2_loss + l3_loss + l1_box_loss + l2_box_loss + l3_box_loss

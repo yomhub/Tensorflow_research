@@ -6,13 +6,16 @@ from mydataset.ctw import CTW
 from mydataset.svt import SVT
 from lib.model.config import cfg
 from lib.model.faster_rcnn import Faster_RCNN, RCNNLoss
+from lib.model.label_rcnn import Label_RCNN, LRCNNLoss
 from lib.frcnn_trainer import FRCNNTrainer
+from lib.label_rcnn_trainer import LRCNNTrainer
 
 if __name__ == "__main__":
 
   parser = argparse.ArgumentParser(description='Choose settings.')
   parser.add_argument('--proposal', help='Choose proposal in nms and top_k.',default='top_k')
   parser.add_argument('--debug', help='Set --debug if want to debug.', action="store_true")
+  parser.add_argument('--net', help='Choose noework (frcnn/lrcnn).', default="lrcnn")
   parser.add_argument('--dataset', help='Choose dataset.', default="svt")
   parser.add_argument('--datax', type=int, help='Dataset output width.',default=1024)
   parser.add_argument('--datay', type=int, help='Dataset output height.',default=1024)
@@ -26,19 +29,29 @@ if __name__ == "__main__":
   print("\t Step size: {},\n\t Batch size: {}.\n".format(args.step,args.batch))
   
   isdebug = args.debug
-  isdebug = True
+  # isdebug = True
   learning_rate = args.learnrate
-  trainer = FRCNNTrainer(isdebug=isdebug,task_name="{}_with_{}".format(args.proposal,args.dataset))
+  
   optimizer = tf.keras.optimizers.Adam(learning_rate=learning_rate)
 
   if(args.dataset=='svt'):
     mydatalog = SVT(out_size=[args.datax,args.datay])
-    loss = RCNNLoss(cfg=cfg,cfg_name="TRAIN",gtformat='xywh')
+    gtformat = 'xywh'
   else:
-    loss = RCNNLoss(cfg=cfg,cfg_name="TRAIN",gtformat='yxyx')
     mydatalog = CTW(out_size=[args.datax,args.datay])
+    gtformat='yxyx'
 
-  model = Faster_RCNN(num_classes=2,bx_choose=args.proposal)
+  if(args.net=='frcnn'):
+    # faster RCNN
+    trainer = FRCNNTrainer(isdebug=isdebug,task_name="FRCNN_with_{}_{}".format(args.proposal,args.dataset))
+    model = Faster_RCNN(num_classes=2,bx_choose=args.proposal)
+    loss = RCNNLoss(cfg=cfg,cfg_name="TRAIN",gtformat=gtformat)
+  else:
+    # label RCNN
+    trainer = LRCNNTrainer(isdebug=isdebug,task_name="LRCNN_with_{}".format(args.dataset))
+    model = Label_RCNN(num_classes=2)
+    loss = LRCNNLoss(imge_size=[args.datax,args.datay],gtformat=gtformat)
+  
   if(not(isdebug)):
     last_model = trainer.load(model)
   if(not(isdebug) and last_model!=None):
