@@ -42,17 +42,20 @@ class Trainer():
     self.model = None
     self.loss = None
     self.opt = None
+    self.eva_step = 0
     
-  def log_image(self, tfimg, log_num=10, img_size=None):
+  def log_image(self, tfimg, log_num=10, img_size=None, name=None):
     if(self.isdebug and self.file_writer==None):
       self.file_writer = tf.summary.create_file_writer(self.logs_path)
       self.file_writer.set_as_default()
-
+    log_num = log_num if log_num<tfimg.shape[0] else int(tfimg.shape[0])
+    if(name == None):
+      name = "{} images.".format(log_num)
     with self.file_writer.as_default():
-    # Don't forget to reshape.
-      if(img_size!=None):
-        tfimg = tf.reshape(tfimg, (-1, img_size[0], img_size[1], tfimg.shape[-1]))
-      tf.summary.image("25 training data examples", tfimg, max_outputs=log_num, step=0)
+      # # Don't forget to resize.
+      # if(img_size!=None):
+      #   tfimg = tf.image.resize(tfimg, img_size)
+      tf.summary.image(name, tfimg/256.0, step=0, max_outputs=log_num)
   
   def set_trainer(self,model=None,loss=None,opt=None,data_count=None):
     if(model!=None):
@@ -72,6 +75,45 @@ class Trainer():
 
   def batch_callback(self,batch_size,logger,time_usage):
     raise NotImplementedError
+
+  def eval_action(self,x_single,y_single,step,logger):
+    raise NotImplementedError
+
+  def eval_callback(self,total_size,logger,time_usage):
+    raise NotImplementedError
+
+  def evaluate(self,x_val,y_val,model=None):
+    tstart = datetime.now()
+    total_data = x_val.shape[0]
+    
+    if(type(y_val)!=list):
+      y_val=[y_val]
+    assert(total_data==len(y_val))
+
+    logger = open(os.path.join(self.logs_path,'evaluate.txt'),'a+',encoding='utf8')
+    
+    if(model!=None):
+      self.model = model
+    else:
+      if(self.model!=None):
+        model = self.model
+      else:
+        return
+        
+    x_val = tf.split(x_val,total_data,axis=0)
+    cur_stp = self.eva_step
+    for step in range(total_data):
+      if(x_val[step].dtype!=tf.float32 or x_val[step].dtype!=tf.float64):
+        x_val[step] = tf.cast(x_val[step],tf.float32)
+      ret = self.eval_action(x_val[step],y_val[step],cur_stp,logger)
+      cur_stp += 1
+      if(ret==-1):
+        logger.close()
+        return ret
+    self.eval_callback(total_data,logger,datetime.now() - tstart)
+    self.eva_step = cur_stp
+    logger.close()
+    return 0
 
   def fit(self,
     x_train,y_train,
@@ -127,6 +169,8 @@ class Trainer():
     self.current_step = cur_stp
     self.batch += 1
     logger.close()
+    if(x_val!=None and y_val!=None):
+      self.evaluate(x_val,y_val)
     return 0
 
   def save(self,model=None):
@@ -157,7 +201,7 @@ class Trainer():
     except Exception as e:
       print(str(e))
       return None
-    self.set_trainer(model)
+    self.model = model
 
     try:
       txtlog = open(os.path.join(loddir,'log.txt'),'r',encoding='utf8')

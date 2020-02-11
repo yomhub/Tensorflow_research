@@ -94,13 +94,13 @@ class Label_RCNN(tf.keras.Model):
                             name="rpn_L1_bbox_pred",
                             )                           
     
-    self.rpn_L1_window = tf.keras.models.Sequential(
-      [
-        tf.keras.layers.Dense(256,input_shape=self.rpn_L1_wshape,activation=tf.nn.relu),
-        tf.keras.layers.Dense(self.direction,activation=None),
-      ],
-      "rpn_L1_window_direction"
-    )
+    # self.rpn_L1_window = tf.keras.models.Sequential(
+    #   [
+    #     tf.keras.layers.Dense(256,input_shape=self.rpn_L1_wshape,activation=tf.nn.relu),
+    #     tf.keras.layers.Dense(self.direction,activation=None),
+    #   ],
+    #   "rpn_L1_window_direction"
+    # )
     self.rpn_L2_conv = tf.keras.layers.Conv2D(filters=512,
                             kernel_size=(3, 3),
                             activation=tf.nn.relu,
@@ -119,13 +119,13 @@ class Label_RCNN(tf.keras.Model):
                             activation=None,
                             name="rpn_L2_bbox_pred",
                             )
-    self.rpn_L2_window = tf.keras.models.Sequential(
-      [
-        tf.keras.layers.Dense(512,input_shape=self.rpn_L2_wshape,activation=tf.nn.relu),
-        tf.keras.layers.Dense(self.direction,activation=None),
-      ],
-      "rpn_L2_window_direction"
-    )
+    # self.rpn_L2_window = tf.keras.models.Sequential(
+    #   [
+    #     tf.keras.layers.Dense(512,input_shape=self.rpn_L2_wshape,activation=tf.nn.relu),
+    #     tf.keras.layers.Dense(self.direction,activation=None),
+    #   ],
+    #   "rpn_L2_window_direction"
+    # )
     self.rpn_L3_conv = tf.keras.layers.Conv2D(filters=512,
                             kernel_size=(3, 3),
                             activation=tf.nn.relu,
@@ -144,13 +144,13 @@ class Label_RCNN(tf.keras.Model):
                             activation=None,
                             name="rpn_L3_bbox_pred",
                             )     
-    self.rpn_L3_window = tf.keras.models.Sequential(
-      [
-        tf.keras.layers.Dense(512,input_shape=self.rpn_L3_wshape,activation=tf.nn.relu),
-        tf.keras.layers.Dense(self.direction,activation=None),
-      ],
-      "rpn_L3_window_direction"
-    )                
+    # self.rpn_L3_window = tf.keras.models.Sequential(
+    #   [
+    #     tf.keras.layers.Dense(512,input_shape=self.rpn_L3_wshape,activation=tf.nn.relu),
+    #     tf.keras.layers.Dense(self.direction,activation=None),
+    #   ],
+    #   "rpn_L3_window_direction"
+    # )                
     super(Label_RCNN, self).build(input_shape)
 
   def call(self, inputs):
@@ -163,24 +163,24 @@ class Label_RCNN(tf.keras.Model):
 
     l1_score = self.rpn_L1_cls_score(l1_feat)
     l1_bbox = self.rpn_L1_bbox_pred(l1_feat)
-    l1_ort = tf.nn.softmax(self.rpn_L1_window(l1_feat),axis=-1)
+    # l1_ort = tf.nn.softmax(self.rpn_L1_window(l1_feat),axis=-1)
     l2_score = self.rpn_L2_cls_score(l2_feat)
     l2_bbox = self.rpn_L2_bbox_pred(l2_feat)
-    l2_ort = tf.nn.softmax(self.rpn_L2_window(l2_feat),axis=-1)
+    # l2_ort = tf.nn.softmax(self.rpn_L2_window(l2_feat),axis=-1)
     l3_score = self.rpn_L3_cls_score(l3_feat)
     l3_bbox = self.rpn_L3_bbox_pred(l3_feat)
-    l3_ort = tf.nn.softmax(self.rpn_L3_window(l3_feat),axis=-1)
+    # l3_ort = tf.nn.softmax(self.rpn_L3_window(l3_feat),axis=-1)
   
     self.y_pred = {
       "l1_score" : l1_score,
       "l1_bbox" : l1_bbox,
-      "l1_ort" : l1_ort,
+      # "l1_ort" : l1_ort,
       "l2_score" : l2_score,
       "l2_bbox" : l2_bbox,
-      "l2_ort" : l2_ort,
+      # "l2_ort" : l2_ort,
       "l3_score" : l3_score,
       "l3_bbox" : l3_bbox,
-      "l3_ort" : l3_ort,
+      # "l3_ort" : l3_ort,
     }
     # return l1_score,l1_bbox,l1_ort,l2_score,l2_bbox,l2_ort,l3_score,l3_bbox,l3_ort
     return self.y_pred
@@ -206,21 +206,45 @@ class LRCNNLoss(tf.keras.losses.Loss):
     
   def _boxes_loss(self,box_prd,y_true):
     loss_value = pre_box_loss(y_true,box_prd,self.imge_size)
+    loss_value = loss_value / tf.math.reduce_sum((y_true[:,2]-y_true[:,0])*(y_true[:,3]-y_true[:,1]))
     return tf.math.reduce_sum(loss_value)
 
   def call(self, y_true, y_pred):
     if(self.gtformat=='xywh'):
       # convert [class, xstart, ystart, w, h] to
       # [y1, x1, y2, x2]
+      gt_area_h = tf.reshape(y_true[:,-1],[-1])
+      gt_area_w = tf.reshape(y_true[:,-2],[-1])
       gt_boxes = xywh2yxyx(y_true[:,1:])
       y_true = tf.stack([y_true[:,0],gt_boxes[:,0],gt_boxes[:,1],gt_boxes[:,2],gt_boxes[:,3]],axis=1)
+    else:
+      gt_area_h = tf.reshape(y_true[:,-2]-y_true[:,-4],[-1])
+      gt_area_w = tf.reshape(y_true[:,-1]-y_true[:,-3],[-1])
 
-    l1_label_loss = self._label_loss(y_pred["l1_score"],y_true)
-    l2_label_loss = self._label_loss(y_pred["l2_score"],y_true)
+    # gt_area = gt_area_h*gt_area_w
+    # l3_y = tf.gather(y_true,tf.reshape(tf.where(gt_area>=32.0*32.0),[-1]))
+    # if(l3_y.shape[0]!=None and l3_y.shape[0]>0):
+    #   l3_box_loss = self._boxes_loss(y_pred["l3_bbox"],l3_y[:,-4:])
+    # else:
+    #   l3_box_loss = 0.0
+    l3_box_loss = self._boxes_loss(y_pred["l3_bbox"],y_true[:,-4:])
     l3_label_loss = self._label_loss(y_pred["l3_score"],y_true)
-    l1_box_loss = self._boxes_loss(y_pred["l1_bbox"],y_true[:,1:])
-    l2_box_loss = self._boxes_loss(y_pred["l2_bbox"],y_true[:,1:])
-    l3_box_loss = self._boxes_loss(y_pred["l3_bbox"],y_true[:,1:])
+
+    # l2_y = tf.gather(y_true,tf.reshape(tf.where(tf.logical_and(gt_area>=16.0*16.0,gt_area<32.0*32.0)),[-1]))
+    # if(l2_y.shape[0]!=None and l2_y.shape[0]>0):
+    #   l2_box_loss = self._boxes_loss(y_pred["l2_bbox"],l2_y[:,-4:])
+    # else:
+    #   l2_box_loss = 0.0
+    l2_box_loss = self._boxes_loss(y_pred["l2_bbox"],y_true[:,-4:])
+    l2_label_loss = self._label_loss(y_pred["l2_score"],y_true)
+
+    # l1_y = tf.gather(y_true,tf.reshape(tf.where(gt_area<16.0*16.0),[-1]))
+    # if(l1_y.shape[0]!=None and l1_y.shape[0]>0):
+    #   l1_box_loss = self._boxes_loss(y_pred["l1_bbox"],l1_y[:,-4:])
+    # else:
+    #   l1_box_loss = 0.0
+    l1_box_loss = self._boxes_loss(y_pred["l1_bbox"],y_true[:,-4:])
+    l1_label_loss = self._label_loss(y_pred["l1_score"],y_true)
 
     self.loss_detail={
       "l1_label_loss" : l1_label_loss,

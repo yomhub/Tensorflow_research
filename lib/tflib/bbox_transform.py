@@ -241,15 +241,17 @@ def get_label_from_mask(gt_box,mask):
     gt_label_list += [inc]
   return gt_label_list
 
-def pre_box_loss(gt_box, pred_map, org_size=None):
+def pre_box_loss(gt_box, pred_map, org_size=None, sigma=1.0):
   """
     Args:
       gt_box: tensor (total_gts,4) with [y1, x1, y2, x2]
+        in original coordinate.
       pred_map: predict layer tensor (h,w,4) with [y1, x1, y2, x2]
       org_size: original image size (h,w)
     Return:
       loss value
   """
+  sigma_2 = sigma ** 2
   pred_map = tf.reshape(pred_map,pred_map.shape[-3:])
   feat_h,feat_w = pred_map.shape[-3:-1]
   if(org_size==None):
@@ -266,19 +268,37 @@ def pre_box_loss(gt_box, pred_map, org_size=None):
   for box in gt_box:
     y_start,y_end = math.floor(box[0]*cube_h),math.ceil(box[2]*cube_h)
     x_start,x_end = math.floor(box[1]*cube_w),math.ceil(box[3]*cube_w)
-    tmp_det = tf.math.reduce_sum(tf.math.abs(pred_map[y_start,x_start:x_end,0] - box[0])  \
-      +tf.math.abs(pred_map[y_end,x_start:x_end,2] - box[2])) \
-      +tf.math.reduce_sum(tf.math.abs(pred_map[y_start:y_end,x_start,1] - box[1]) \
-      +tf.math.abs(pred_map[y_start:y_end,x_end,3] - box[3]))
+    tmp_ys = tf.math.abs(pred_map[y_start,x_start:x_end,0] - box[0])
+    tmp_ys = tf.where(tmp_ys > (1. / sigma_2),tmp_ys - (0.5 / sigma_2),tf.pow(tmp_ys, 2) * (sigma_2 / 2.))
+    tmp_ye = tf.math.abs(pred_map[y_end,x_start:x_end,2] - box[2])
+    tmp_ye = tf.where(tmp_ye > (1. / sigma_2),tmp_ye - (0.5 / sigma_2),tf.pow(tmp_ye, 2) * (sigma_2 / 2.))
+    tmp_xs = tf.math.abs(pred_map[y_start:y_end,x_start,1] - box[1])
+    tmp_xs = tf.where(tmp_xs > (1. / sigma_2),tmp_xs - (0.5 / sigma_2),tf.pow(tmp_xs, 2) * (sigma_2 / 2.))
+    tmp_xe = tf.math.abs(pred_map[y_start:y_end,x_end,3] - box[3])
+    tmp_xe = tf.where(tmp_xe > (1. / sigma_2),tmp_xe - (0.5 / sigma_2),tf.pow(tmp_xe, 2) * (sigma_2 / 2.))
+    tmp_det = tf.math.reduce_mean(tmp_ys+tmp_ye)+tf.math.reduce_mean(tmp_xs+tmp_xe)
+
     y_start+=1
     y_end-=1
     x_start+=1
     x_end-=1
     if(y_start<y_end and x_start<x_end):
-      tmp_det += tf.math.reduce_sum(tf.math.abs(pred_map[y_start,x_start:x_end,0] - det_cy[y_start:y_end,x_start:x_end]) \
-        + tf.math.abs(pred_map[y_end,x_start:x_end,2] - det_cy[(y_start+1):(y_end+1),(x_start+1):(x_end+1)])) \
-        + tf.math.reduce_sum(tf.math.abs(pred_map[y_start,x_start:x_end,1] - det_cx[y_start:y_end,x_start:x_end]) \
-        + tf.math.abs(pred_map[y_end,x_start:x_end,3] - det_cx[(y_start+1):(y_end+1),(x_start+1):(x_end+1)]))
+      tmp_ys = tf.math.abs(pred_map[y_start:y_end,x_start:x_end,0] - det_cy[y_start:y_end,x_start:x_end])
+      tmp_ys = tf.where(tmp_ys > (1. / sigma_2),tmp_ys - (0.5 / sigma_2),tf.pow(tmp_ys, 2) * (sigma_2 / 2.))
+      tmp_ye = tf.math.abs(pred_map[y_start:y_end,x_start:x_end,2] - det_cy[(y_start+1):(y_end+1),(x_start+1):(x_end+1)])
+      tmp_ye = tf.where(tmp_ye > (1. / sigma_2),tmp_ye - (0.5 / sigma_2),tf.pow(tmp_ye, 2) * (sigma_2 / 2.))
+      tmp_xs = tf.math.abs(pred_map[y_start:y_end,x_start:x_end,1] - det_cx[y_start:y_end,x_start:x_end])
+      tmp_xs = tf.where(tmp_xs > (1. / sigma_2),tmp_xs - (0.5 / sigma_2),tf.pow(tmp_xs, 2) * (sigma_2 / 2.))
+      tmp_xe = tf.math.abs(pred_map[y_start:y_end,x_start:x_end,3] - det_cx[(y_start+1):(y_end+1),(x_start+1):(x_end+1)])
+      tmp_xe = tf.where(tmp_xe > (1. / sigma_2),tmp_xe - (0.5 / sigma_2),tf.pow(tmp_xe, 2) * (sigma_2 / 2.))
+      tmp_det += tf.math.reduce_mean(tmp_ys+tmp_ye)+tf.math.reduce_mean(tmp_xs+tmp_xe)
+      # tmp_y = tf.math.abs(pred_map[y_start,x_start:x_end,0] - det_cy[y_start:y_end,x_start:x_end]) \
+      #   + tf.math.abs(pred_map[y_end,x_start:x_end,2] - det_cy[(y_start+1):(y_end+1),(x_start+1):(x_end+1)])
+      # tmp_y = tf.where(tmp_y > (1. / sigma_2),tmp_y - (0.5 / sigma_2),tf.pow(tmp_y, 2) * (sigma_2 / 2.))
+      # tmp_x = tf.math.abs(pred_map[y_start,x_start:x_end,1] - det_cx[y_start:y_end,x_start:x_end]) \
+      #   + tf.math.abs(pred_map[y_end,x_start:x_end,3] - det_cx[(y_start+1):(y_end+1),(x_start+1):(x_end+1)])
+      # tmp_x = tf.where(tmp_x > (1. / sigma_2),tmp_x - (0.5 / sigma_2),tf.pow(tmp_x, 2) * (sigma_2 / 2.))
+      # tmp_det += tf.math.reduce_sum(tmp_y)+tf.math.reduce_sum(tmp_x)
     abs_det+=[tmp_det]
   return tf.convert_to_tensor(abs_det)
 

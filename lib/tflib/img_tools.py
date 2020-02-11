@@ -1,6 +1,7 @@
 import tensorflow as tf
 import numpy as np
 import math
+import matplotlib.pyplot as plt 
 
 @tf.function
 def overlap_tf(xbboxs,ybboxs):
@@ -85,7 +86,7 @@ def check_inside(boxes,img_size):
     Args:
       boxes: (N,4) with [y1,x1,y2,x2]
       img_size: [height,width]
-    Return: Bool mask with (N) shape
+    Return: BOOL mask with (N) shape
   """
   cond = tf.logical_and(
     tf.logical_and(boxes[:,0]>=0.0 , boxes[:,0]<=img_size[0]),

@@ -2,37 +2,43 @@ import tensorflow as tf
 import numpy as np
 import matplotlib.pyplot as plt
 from tflib.img_tools import overlap_tf
+from tflib.bbox_transform import xywh2yxyx
 
-def draw_boxes(img,box):
+def draw_boxes(img,boxes,gtformat='xywh'):
   """
   Args:
     image: (image_num,H,W,1 or 3) tensor
-    box: (image_num,box_num,4) tensor where 4 is
+    boxes: list of (box_num,4) tensor where 4 is
       [y_min, x_min, y_max, x_max]
+    gtformat: xywh or yxyx
   """
+  imgh=float(img.shape[-3])
+  imgw=float(img.shape[-2])
   if(len(img.shape)==3):
     img = tf.reshape(img,[1,]+img.shape)
-  if(len(box.shape)==2):
-    box = tf.reshape(box,[1,]+box.shape)
+  if(type(boxes)!=list):
+    boxes = [boxes]
   if(img.dtype!=tf.float32 or img.dtype!=tf.float64):
+    # tf.image.draw_bounding_boxes need float32 image
     img = tf.cast(img,tf.float32)
-  maxs = tf.reduce_max(box,axis=2)
-  maxs = tf.reduce_max(maxs,axis=1)
-  if(maxs>1.0):
-    h=img.shape[1]
-    w=img.shape[2]
-    box=tf.stack(
-      [box[:,:,0]/h,box[:,:,1]/w,box[:,:,2]/h,box[:,:,3]/w],
-      axis=2
+  ret = []
+  for i in range(len(boxes)):
+    if(gtformat=='xywh'):
+      box = tf.reshape(xywh2yxyx(boxes[i][:,-4:]),[1,-1,4])
+    else:
+      box = tf.reshape(boxes[i],[1,-1,4])
+    if(tf.reduce_max(box)>1.0):
+      box = tf.stack([box[0,:,0]/imgh,box[0,:,1]/imgw,box[0,:,2]/imgh,box[0,:,3]/imgw],axis=1)
+      box = tf.reshape(box,[1,-1,4])
+    col = tf.random.uniform(
+      (box.shape[-2],3),
+      minval=0,
+      maxval=254,
       )
-  col = tf.random.uniform(
-    (box.shape[1],3),
-    minval=0,
-    maxval=254,
-    )
+    ret += [tf.image.draw_bounding_boxes(tf.reshape(img[i],[1,]+img[i].shape[-3:]),box,col)]
+  ret = tf.convert_to_tensor(ret)
 
-  ret = tf.image.draw_bounding_boxes(img,box,col)
-  return ret
+  return tf.reshape(ret,[ret.shape[0],]+ret.shape[-3:])
 
 def show_img(img):
   if(len(img.shape)>3):
@@ -64,11 +70,6 @@ def load_and_preprocess_image(imgdir, outsize=None):
   if(outsize!=None):
     image = tf.image.resize(image, outsize)
   return image
-
-def save_image(img, savedir):
-  if(len(img.shape)==4):
-    img = tf.reshape(img,img.shape[1:])
-  tf.io.write_file(savedir,tf.io.encode_jpeg(tf.cast(img,tf.uint8)))
 
 def check_nan(tar):
   if(type(tar)==list):
