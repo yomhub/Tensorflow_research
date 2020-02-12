@@ -20,9 +20,9 @@ if __name__ == "__main__":
   parser.add_argument('--debug', help='Set --debug if want to debug.', action="store_true")
   parser.add_argument('--net', help='Choose noework (frcnn/lrcnn).', default="lrcnn")
   parser.add_argument('--dataset', help='Choose dataset.', default="svt")
-  parser.add_argument('--datax', type=int, help='Dataset output width.',default=1024)
-  parser.add_argument('--datay', type=int, help='Dataset output height.',default=1024)
-  parser.add_argument('--step', type=int, help='Step size.',default=5)
+  parser.add_argument('--datax', type=int, help='Dataset output width.',default=1280)
+  parser.add_argument('--datay', type=int, help='Dataset output height.',default=720)
+  parser.add_argument('--step', type=int, help='Step size.',default=10)
   parser.add_argument('--batch', type=int, help='Batch size.',default=20)
   # parser.add_argument('--savestep', type=int, help='Batch size.',default=20)
   parser.add_argument('--learnrate', type=float, help='Learning rate.',default=0.001)
@@ -58,7 +58,7 @@ if __name__ == "__main__":
     # label RCNN
     trainer = LRCNNTrainer(isdebug=isdebug,task_name="LRCNN_with_{}_{}".format(args.dataset,args.opt))
     model = Label_RCNN(num_classes=2)
-    loss = LRCNNLoss(imge_size=[args.datax,args.datay],gtformat=gtformat)
+    loss = LRCNNLoss(imge_size=[args.datay,args.datax],gtformat=gtformat)
   
   if(not(isdebug)):
     last_model = trainer.load(model)
@@ -90,10 +90,12 @@ if __name__ == "__main__":
         #   save_image(imgs[i],'/home/yomcoding/TensorFlow/FasterRCNN/log/x_train_demo_{}.jpg'.format(i))
         trainer.log_image(imgs,10,name="{} training data examples.".format(imgs.shape[0]))
         islog=True
-
-      trainer.fit(x_train,y_train,model,loss,optimizer,x_val=x_val,y_val=y_val)
-      
-      if(i%5==0):
+        
+      trainer.fit(x_train,y_train,model,loss,optimizer)
+      if(i%4==0):
+        trainer.evaluate(x_val,y_val)
+        trainer.evaluate(x_train[0:2],y_val[0:2])
+      if(i%10==0):
         trainer.set_trainer(data_count=mydatalog._init_conter)
         trainer.save()
 

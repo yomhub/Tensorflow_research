@@ -34,8 +34,10 @@ class Label_RCNN(tf.keras.Model):
     self.num_classes = int(num_classes)
     self.bx_ths = bx_ths
     self.direction = direction
+
   def build(self,input_shape):
-    
+    imgh = input_shape[-3]
+    imgw = input_shape[-2]
     if(self.feature_layer_name=='vgg16'):
       vgg16=tf.keras.applications.VGG16(weights='imagenet', include_top=False)
       self.feature_model = tf.keras.Model(
@@ -59,6 +61,9 @@ class Label_RCNN(tf.keras.Model):
       self.rpn_L1_wshape = [1,1,256]
       self.rpn_L2_wshape = [1,1,512]
       self.rpn_L3_wshape = [1,1,512]
+      self.rpn_L1_rec_fild = [4,4]
+      self.rpn_L2_rec_fild = [8,8]
+      self.rpn_L3_rec_fild = [16,16]
     elif(self.feature_layer_name=='resnet'):
       rn=tf.keras.applications.resnet_v2.ResNet101V2()
         # rn.get_layer("conv1_pad"), rn.get_layer("conv1_conv"), rn.get_layer("pool1_pad"), rn.get_layer("pool1_pool"),
@@ -92,8 +97,10 @@ class Label_RCNN(tf.keras.Model):
                             padding='same', 
                             activation=None,
                             name="rpn_L1_bbox_pred",
-                            )                           
-    
+                            )     
+    cube_h,cube_w = int(imgh / self.rpn_L1_rec_fild[0]),int(imgw / self.rpn_L1_rec_fild[1])
+    self.rpn_l1_det = feat_layer_cod_gen([imgh,imgw],[cube_h,cube_w],self.num_classes-1)
+
     # self.rpn_L1_window = tf.keras.models.Sequential(
     #   [
     #     tf.keras.layers.Dense(256,input_shape=self.rpn_L1_wshape,activation=tf.nn.relu),
@@ -119,6 +126,9 @@ class Label_RCNN(tf.keras.Model):
                             activation=None,
                             name="rpn_L2_bbox_pred",
                             )
+    cube_h,cube_w = int(imgh / self.rpn_L2_rec_fild[0]),int(imgw / self.rpn_L2_rec_fild[1])
+    self.rpn_l2_det = feat_layer_cod_gen([imgh,imgw],[cube_h,cube_w],self.num_classes-1)
+
     # self.rpn_L2_window = tf.keras.models.Sequential(
     #   [
     #     tf.keras.layers.Dense(512,input_shape=self.rpn_L2_wshape,activation=tf.nn.relu),
@@ -144,33 +154,41 @@ class Label_RCNN(tf.keras.Model):
                             activation=None,
                             name="rpn_L3_bbox_pred",
                             )     
+    cube_h,cube_w = int(imgh / self.rpn_L3_rec_fild[0]),int(imgw / self.rpn_L3_rec_fild[1])
+    self.rpn_l3_det = feat_layer_cod_gen([imgh,imgw],[cube_h,cube_w],self.num_classes-1)                          
     # self.rpn_L3_window = tf.keras.models.Sequential(
     #   [
     #     tf.keras.layers.Dense(512,input_shape=self.rpn_L3_wshape,activation=tf.nn.relu),
     #     tf.keras.layers.Dense(self.direction,activation=None),
     #   ],
     #   "rpn_L3_window_direction"
-    # )                
+    # )         
+    self.imgh = imgh
+    self.imgw = imgw
     super(Label_RCNN, self).build(input_shape)
 
   def call(self, inputs):
     if(inputs.dtype!=tf.float32 or inputs.dtype!=tf.float64):
       inputs = tf.cast(inputs,tf.float32)
+    if(inputs.shape[-3]!=self.imgh or inputs.shape[-2]!=self.imgw):
+      inputs = tf.image.resize(inputs,[self.imgh,self.imgw])
+
     l1_feat,l2_feat,l3_feat = self.feature_model(inputs)
     l1_feat = self.rpn_L1_conv(l1_feat)
     l2_feat = self.rpn_L2_conv(l2_feat)
     l3_feat = self.rpn_L3_conv(l3_feat)
 
     l1_score = self.rpn_L1_cls_score(l1_feat)
-    l1_bbox = self.rpn_L1_bbox_pred(l1_feat)
+    l1_bbox = self.rpn_L1_bbox_pred(l1_feat) + self.rpn_l1_det
     # l1_ort = tf.nn.softmax(self.rpn_L1_window(l1_feat),axis=-1)
     l2_score = self.rpn_L2_cls_score(l2_feat)
-    l2_bbox = self.rpn_L2_bbox_pred(l2_feat)
+    l2_bbox = self.rpn_L2_bbox_pred(l2_feat) + self.rpn_l2_det
     # l2_ort = tf.nn.softmax(self.rpn_L2_window(l2_feat),axis=-1)
     l3_score = self.rpn_L3_cls_score(l3_feat)
-    l3_bbox = self.rpn_L3_bbox_pred(l3_feat)
+    l3_bbox = self.rpn_L3_bbox_pred(l3_feat) + self.rpn_l3_det
     # l3_ort = tf.nn.softmax(self.rpn_L3_window(l3_feat),axis=-1)
-  
+
+    # 
     self.y_pred = {
       "l1_score" : l1_score,
       "l1_bbox" : l1_bbox,
@@ -206,7 +224,7 @@ class LRCNNLoss(tf.keras.losses.Loss):
     
   def _boxes_loss(self,box_prd,y_true):
     loss_value = pre_box_loss(y_true,box_prd,self.imge_size)
-    loss_value = loss_value / tf.math.reduce_sum((y_true[:,2]-y_true[:,0])*(y_true[:,3]-y_true[:,1]))
+    # loss_value = loss_value / tf.math.reduce_sum((y_true[:,2]-y_true[:,0])*(y_true[:,3]-y_true[:,1]))
     return tf.math.reduce_sum(loss_value)
 
   def call(self, y_true, y_pred):

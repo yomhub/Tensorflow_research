@@ -105,7 +105,7 @@ class Trainer():
     for step in range(total_data):
       if(x_val[step].dtype!=tf.float32 or x_val[step].dtype!=tf.float64):
         x_val[step] = tf.cast(x_val[step],tf.float32)
-      ret = self.eval_action(x_val[step],y_val[step],cur_stp,logger)
+      ret = self.eval_action(x_val[step],y_val[step],step,logger)
       cur_stp += 1
       if(ret==-1):
         logger.close()

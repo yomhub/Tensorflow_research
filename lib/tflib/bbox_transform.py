@@ -95,6 +95,32 @@ def clip_boxes_tf(boxes, im_info):
   return tf.stack([b02[:,0], b13[:,0], b02[:,1], b13[:,1]], axis=1)
 
 @tf.function
+def feat_layer_cod_gen(org_size,feat_size,class_num=1):
+  """
+    Generate feature layer coordinate.
+    Args:
+      org_size: original image size [oh,ow]
+      feat_size: feature image size [fh,fw]
+      class_num: number of class
+    Return:
+      tensor with (1,fh,fw,class_num*4) shape
+      where 4 is [dy1,dx1,dy2,dx2]
+  """
+  cube_h,cube_w = int(org_size[0] / feat_size[0]),int(org_size[1] / feat_size[1])
+  det_cx,det_cy = tf.meshgrid(
+    tf.range(0,feat_size[1]+2,dtype=tf.float32)*cube_w,
+    tf.range(0,feat_size[0]+2,dtype=tf.float32)*cube_h)  
+  det_mrt = tf.stack([
+      det_cy[0:feat_size[0],0:feat_size[1]],
+      det_cx[0:feat_size[0],0:feat_size[1]],
+      det_cy[1:feat_size[0]+1,1:feat_size[1]+1],
+      det_cx[1:feat_size[0]+1,1:feat_size[1]+1],
+    ],axis=-1)
+  det_mrt = tf.broadcast_to(det_mrt,[class_num,]+det_mrt.shape[-3:-1]+[4])
+  det_mrt = tf.transpose(det_mrt,perm=[1,2,0,3])
+  return tf.reshape(det_mrt,[1,]+det_mrt.shape[0:2]+[4*class_num])
+
+@tf.function
 def xywh2yxyx(boxes):
   return tf.stack([boxes[:,1],boxes[:,0],boxes[:,1]+boxes[:,3],boxes[:,0]+boxes[:,2]],axis=1)
 
@@ -256,14 +282,16 @@ def pre_box_loss(gt_box, pred_map, org_size=None, sigma=1.0):
   feat_h,feat_w = pred_map.shape[-3:-1]
   if(org_size==None):
     cube_h,cube_w = 1,1
+    img_h,img_w = pred_map.shape[-3:-1]
   else:
+    img_h,img_w = org_size[0],org_size[1]
     cube_h,cube_w = pred_map.shape[-3]/org_size[0],pred_map.shape[-2]/org_size[1]
     
   gt_box = gt_box.numpy()
   abs_det = []
   det_cx,det_cy = tf.meshgrid(tf.range(0,feat_w,dtype=tf.float32)/cube_w,tf.range(0,feat_h,dtype=tf.float32)/cube_h)
-  # det_cy = np.arange(0,feat_h,step=cube_h,dtype=np.int16)
-  # det_cx = np.arange(0,feat_w,step=cube_w,dtype=np.int16)
+  # det_cy = np.arange(0,feat_h,step=feat_size[0],dtype=np.int16)
+  # det_cx = np.arange(0,feat_w,step=feat_size[1],dtype=np.int16)
   # det_cy,det_cx = np.meshgrid(np.arange(0,feat_h,dtype=np.int16),np.arange(0,feat_w,dtype=np.int16))
   for box in gt_box:
     y_start,y_end = math.floor(box[0]*cube_h),math.ceil(box[2]*cube_h)
@@ -276,22 +304,41 @@ def pre_box_loss(gt_box, pred_map, org_size=None, sigma=1.0):
     tmp_xs = tf.where(tmp_xs > (1. / sigma_2),tmp_xs - (0.5 / sigma_2),tf.pow(tmp_xs, 2) * (sigma_2 / 2.))
     tmp_xe = tf.math.abs(pred_map[y_start:y_end,x_end,3] - box[3])
     tmp_xe = tf.where(tmp_xe > (1. / sigma_2),tmp_xe - (0.5 / sigma_2),tf.pow(tmp_xe, 2) * (sigma_2 / 2.))
-    tmp_det = tf.math.reduce_mean(tmp_ys+tmp_ye)+tf.math.reduce_mean(tmp_xs+tmp_xe)
+    tmp_det = tf.math.reduce_mean(tmp_ys)/img_h+tf.math.reduce_mean(tmp_ye)/img_h+tf.math.reduce_mean(tmp_xs)/img_w+tf.math.reduce_mean(tmp_xe)/img_w
 
     y_start+=1
     y_end-=1
     x_start+=1
     x_end-=1
     if(y_start<y_end and x_start<x_end):
-      tmp_ys = tf.math.abs(pred_map[y_start:y_end,x_start:x_end,0] - det_cy[y_start:y_end,x_start:x_end])
-      tmp_ys = tf.where(tmp_ys > (1. / sigma_2),tmp_ys - (0.5 / sigma_2),tf.pow(tmp_ys, 2) * (sigma_2 / 2.))
-      tmp_ye = tf.math.abs(pred_map[y_start:y_end,x_start:x_end,2] - det_cy[(y_start+1):(y_end+1),(x_start+1):(x_end+1)])
-      tmp_ye = tf.where(tmp_ye > (1. / sigma_2),tmp_ye - (0.5 / sigma_2),tf.pow(tmp_ye, 2) * (sigma_2 / 2.))
-      tmp_xs = tf.math.abs(pred_map[y_start:y_end,x_start:x_end,1] - det_cx[y_start:y_end,x_start:x_end])
-      tmp_xs = tf.where(tmp_xs > (1. / sigma_2),tmp_xs - (0.5 / sigma_2),tf.pow(tmp_xs, 2) * (sigma_2 / 2.))
-      tmp_xe = tf.math.abs(pred_map[y_start:y_end,x_start:x_end,3] - det_cx[(y_start+1):(y_end+1),(x_start+1):(x_end+1)])
-      tmp_xe = tf.where(tmp_xe > (1. / sigma_2),tmp_xe - (0.5 / sigma_2),tf.pow(tmp_xe, 2) * (sigma_2 / 2.))
-      tmp_det += tf.math.reduce_mean(tmp_ys+tmp_ye)+tf.math.reduce_mean(tmp_xs+tmp_xe)
+      # tmp_ys = tf.math.abs(pred_map[y_start:y_end,x_start:x_end,0] - det_cy[y_start:y_end,x_start:x_end])
+      tmp_ys = tf.where(pred_map[y_start:y_end,x_start:x_end,0]<box[0])
+      if(tmp_ys.shape[0]>0):
+        tmp_ys = tf.math.abs(tf.gather_nd(pred_map[y_start:y_end,x_start:x_end,0],tmp_ys) - box[0])
+        tmp_ys = tf.where(tmp_ys > (1. / sigma_2),tmp_ys - (0.5 / sigma_2),tf.pow(tmp_ys, 2) * (sigma_2 / 2.))
+        tmp_det += tf.math.reduce_mean(tmp_ys)/img_h
+
+      # tmp_ye = tf.math.abs(pred_map[y_start:y_end,x_start:x_end,2] - det_cy[(y_start+1):(y_end+1),(x_start+1):(x_end+1)])
+      tmp_ye = tf.where(pred_map[y_start:y_end,x_start:x_end,2]>box[2])
+      if(tmp_ye.shape[0]>0):
+        tmp_ye = tf.math.abs(tf.gather_nd(pred_map[y_start:y_end,x_start:x_end,2],tmp_ye) - box[2])
+        tmp_ye = tf.where(tmp_ye > (1. / sigma_2),tmp_ye - (0.5 / sigma_2),tf.pow(tmp_ye, 2) * (sigma_2 / 2.))
+        tmp_det += tf.math.reduce_mean(tmp_ye)/img_h
+
+      # tmp_xs = tf.math.abs(pred_map[y_start:y_end,x_start:x_end,1] - det_cx[y_start:y_end,x_start:x_end])
+      tmp_xs = tf.where(pred_map[y_start:y_end,x_start:x_end,1]<box[1])
+      if(tmp_xs.shape[0]>0):
+        tmp_xs = tf.math.abs(tf.gather_nd(pred_map[y_start:y_end,x_start:x_end,1],tmp_xs) - box[1])
+        tmp_xs = tf.where(tmp_xs > (1. / sigma_2),tmp_xs - (0.5 / sigma_2),tf.pow(tmp_xs, 2) * (sigma_2 / 2.))
+        tmp_det += tf.math.reduce_mean(tmp_xs)/img_w
+
+      # tmp_xe = tf.math.abs(pred_map[y_start:y_end,x_start:x_end,3] - det_cx[(y_start+1):(y_end+1),(x_start+1):(x_end+1)])
+      tmp_xe = tf.where(pred_map[y_start:y_end,x_start:x_end,3]>box[3])
+      if(tmp_xe.shape[0]>0):
+        tmp_xe = tf.math.abs(tf.gather_nd(pred_map[y_start:y_end,x_start:x_end,3],tmp_xe) - box[3])
+        tmp_xe = tf.where(tmp_xe > (1. / sigma_2),tmp_xe - (0.5 / sigma_2),tf.pow(tmp_xe, 2) * (sigma_2 / 2.))
+        tmp_det += tf.math.reduce_mean(tmp_xe)/img_w
+
       # tmp_y = tf.math.abs(pred_map[y_start,x_start:x_end,0] - det_cy[y_start:y_end,x_start:x_end]) \
       #   + tf.math.abs(pred_map[y_end,x_start:x_end,2] - det_cy[(y_start+1):(y_end+1),(x_start+1):(x_end+1)])
       # tmp_y = tf.where(tmp_y > (1. / sigma_2),tmp_y - (0.5 / sigma_2),tf.pow(tmp_y, 2) * (sigma_2 / 2.))
