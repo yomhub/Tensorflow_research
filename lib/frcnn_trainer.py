@@ -42,7 +42,9 @@ class FRCNNTrainer(Trainer):
       _auto_scalar(gtbox_num / int(y_single.shape[0]), step, "GT_box_num_pred_div_true")
       if(gtbox_num>0 and int(y_single.shape[0]*2)>gtbox_num):
         bximg = draw_boxes(x_single,bbx,'yxyx')
-        tf.summary.image("boxed_images in step {}".format(step),tf.cast(bximg,tf.int32),step)
+        if(tf.reduce_max(bximg)>1.0):
+          bximg = bximg / 256.0
+        tf.summary.image("boxed_images in step {}".format(step),bximg,step)
 
     self.cur_rpn_cross_entropy += self.loss.loss_detail["rpn_cross_entropy"]
     self.cur_rpn_loss_box += self.loss.loss_detail["rpn_loss_box"]

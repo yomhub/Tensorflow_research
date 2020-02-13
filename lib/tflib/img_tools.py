@@ -130,7 +130,7 @@ def random_gt_generate(img, gtbox, increment=10, multiple=None, max_box_pre=None
       continue
     
     # onlu use box small then half original image
-    low_half = np.where(boxes[:,2]-boxes[:,0]<imgh & boxes[:,3]-boxes[:,1]<imgw).reshape([-1])
+    low_half = np.where(boxes[:,2]-boxes[:,0]<imgh & boxes[:,3]-boxes[:,1]<imgw)[0].reshape([-1])
     if(low_half.shape[0]==0):
       continue
     low_half = np.take(boxes,low_half)
@@ -155,3 +155,41 @@ def random_gt_generate(img, gtbox, increment=10, multiple=None, max_box_pre=None
   
   gtimg = tf.convert_to_tensor(gtimg,dtype=img.dtype)
   return gtimg, box_list
+
+# @tf.function
+def label_overlap_tf(gt_boxes,org_size,feat_label):
+  """
+    Args:
+      gt_boxes: tensor (gt_num,5) with [label,y1,x1,y2,x2]
+      org_size: [h,w] of original image
+      feat_label: tensor (h,w) with [label]
+    Return:
+      overlap, tensor with (gt_num) shape
+  """
+  feat_h,feat_w = feat_label.shape[0]/org_size[0],feat_label.shape[1]/org_size[1]
+  # cube_h,cube_w = int(org_size[0]/feat_label.shape[0]),int(org_size[1]/feat_label.shape[1])
+  labels = gt_boxes[:,0].numpy().astype(np.int16)
+  gt_boxes = tf.stack([gt_boxes[:,1]*feat_h,gt_boxes[:,0]*feat_w,gt_boxes[:,2]*feat_h,gt_boxes[:,3]*feat_w],axis=-1).numpy()
+  feat_label = feat_label.numpy().astype(np.int16)
+  overlaps = []
+  for i in range(labels.shape[0]):
+    gollabel = np.zeros(feat_label.shape,dtype=np.int16)
+    gollabel[math.floor(gt_boxes[i,0]):min(math.ceil(gt_boxes[i,2]),feat_label.shape[0]-1),
+      math.floor(gt_boxes[i,1]):min(math.ceil(gt_boxes[i,3]),feat_label.shape[1]-1)] = 1
+    gollabel[feat_label==labels[i]] += 1
+    if(gollabel[gollabel==1].size>0):
+      overlaps+=[gollabel[gollabel==2].size/gollabel[gollabel==1].size]
+    else:
+      overlaps+=[0]
+  return tf.convert_to_tensor(overlaps)
+
+@tf.function
+def gen_label_from_prob(probs):
+  """
+    Args: probs: tensor with shape (h,w,num_class)
+      or shape (1,h,w,num_class)
+    Return: label tensor with shape (h,w) with tf.int16
+      label will be the subscript of highest possible
+      and value in [0,num_class-1]
+  """
+  return tf.reshape(tf.argmax(probs,axis=-1,output_type=tf.int32),probs.shape[-3:-1])

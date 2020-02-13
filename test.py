@@ -2,6 +2,7 @@ import os, sys
 import tensorflow as tf
 import numpy as np
 import argparse
+from datetime import datetime
 from mydataset.ctw import CTW
 from mydataset.svt import SVT
 from lib.model.config import cfg
@@ -27,14 +28,15 @@ if __name__ == "__main__":
   # parser.add_argument('--savestep', type=int, help='Batch size.',default=20)
   parser.add_argument('--learnrate', type=float, help='Learning rate.',default=0.001)
   args = parser.parse_args()
-
+  time_start = datetime.now()
+  print("Start when {}.\n".format(time_start.strftime("%Y%m%d-%H%M%S")))
   print("Running with: \n\t Use proposal: {},\n\t Is debug: {}.\n".format(args.proposal,args.debug))
   print("\t Step size: {},\n\t Batch size: {}.\n".format(args.step,args.batch))
   print("\t Data size: {} X {}.\n".format(args.datax,args.datay))
   print("\t Optimizer: {}.\n".format(args.opt))
 
   isdebug = args.debug
-  isdebug = True
+  # isdebug = True
   learning_rate = args.learnrate
   
   if(args.opt.lower()=='sgd'):
@@ -56,7 +58,7 @@ if __name__ == "__main__":
     loss = RCNNLoss(cfg=cfg,cfg_name="TRAIN",gtformat=gtformat)
   else:
     # label RCNN
-    trainer = LRCNNTrainer(isdebug=isdebug,task_name="LRCNN_with_{}_{}".format(args.dataset,args.opt))
+    trainer = LRCNNTrainer(isdebug=isdebug,task_name="LRCNN_with_{}_{}".format(args.dataset,args.opt),gtformat=gtformat)
     model = Label_RCNN(num_classes=2)
     loss = LRCNNLoss(imge_size=[args.datay,args.datax],gtformat=gtformat)
   
@@ -78,7 +80,6 @@ if __name__ == "__main__":
       if(sta==-1):
         break
   else:
-    print(type(args.batch))
     islog=False
     for i in range(args.batch):
       x_train, y_train = mydatalog.read_train_batch(args.step)
@@ -91,6 +92,8 @@ if __name__ == "__main__":
         trainer.log_image(imgs,10,name="{} training data examples.".format(imgs.shape[0]))
         islog=True
         
+      x_train = x_train / 256.0
+      # x_val = x_val / 256.0
       trainer.fit(x_train,y_train,model,loss,optimizer)
       if(i%4==0):
         trainer.evaluate(x_val,y_val)
@@ -98,6 +101,9 @@ if __name__ == "__main__":
       if(i%10==0):
         trainer.set_trainer(data_count=mydatalog._init_conter)
         trainer.save()
-
-  print("end")
+  
+  time_usage = datetime.now()
+  print("End at: {}.\n".format(time_usage.strftime("%Y%m%d-%H%M%S")))
+  time_usage = time_usage - time_start
+  print("Time usage: {} Day {} Second.\n".format(time_usage.days,time_usage.seconds))
 

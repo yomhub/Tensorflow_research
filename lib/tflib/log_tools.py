@@ -27,9 +27,11 @@ def _auto_scalar(dic_data, step=0, logname=None):
 def _auto_image(img_data, name=None, step=0, max_outputs=None, description=None):
   if(len(img_data)==3):
     img_data = tf.reshape(img_data,[1,]+img_data.shape)
+  if(tf.reduce_max(img_data)>1.0):
+    img_data = img_data / 256.0
   max_outputs = img_data.shape[0] if max_outputs==None else max_outputs
   name = "_auto_image" if name==None else name
-  tf.summary.image(name,tf.cast(img_data,tf.int32),step,max_outputs,description)
+  tf.summary.image(name,img_data,step,max_outputs,description)
 
 def _auto_histogram(dic_data, step=0, logname=None):
   if(type(dic_data)==list):

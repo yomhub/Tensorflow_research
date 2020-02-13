@@ -279,29 +279,44 @@ def pre_box_loss(gt_box, pred_map, org_size=None, sigma=1.0):
   """
   sigma_2 = sigma ** 2
   pred_map = tf.reshape(pred_map,pred_map.shape[-3:])
-  feat_h,feat_w = pred_map.shape[-3:-1]
+
   if(org_size==None):
+    feat_h,feat_w = 1,1
     cube_h,cube_w = 1,1
   else:
-    cube_h,cube_w = pred_map.shape[-3]/org_size[0],pred_map.shape[-2]/org_size[1]
+    feat_h,feat_w = pred_map.shape[-3]/org_size[0],pred_map.shape[-2]/org_size[1]
+    cube_h,cube_w = int(org_size[0]/pred_map.shape[-3]),int(org_size[1]/pred_map.shape[-2])
     
   gt_box = gt_box.numpy()
   abs_det = []
-  # det_cx,det_cy = tf.meshgrid(tf.range(0,feat_w,dtype=tf.float32)/cube_w,tf.range(0,feat_h,dtype=tf.float32)/cube_h)
-  # det_cy = np.arange(0,feat_h,step=feat_size[0],dtype=np.int16)
-  # det_cx = np.arange(0,feat_w,step=feat_size[1],dtype=np.int16)
-  # det_cy,det_cx = np.meshgrid(np.arange(0,feat_h,dtype=np.int16),np.arange(0,feat_w,dtype=np.int16))
+
   for box in gt_box:
     box_h,box_w = box[2]-box[0],box[3]-box[1]
-    y_start,y_end = math.floor(box[0]*cube_h),min(math.ceil(box[2]*cube_h),feat_h-1)
-    x_start,x_end = math.floor(box[1]*cube_w),min(math.ceil(box[3]*cube_w),feat_w-1)
-    tmp_ys = tf.math.abs(pred_map[y_start,x_start:x_end,0] - box[0])
+    y_start,y_end = math.floor(box[0]*feat_h),min(math.ceil(box[2]*feat_h),pred_map.shape[-3]-1)
+    x_start,x_end = math.floor(box[1]*feat_w),min(math.ceil(box[3]*feat_w),pred_map.shape[-2]-1)
+    tmp_ys = tf.stack([
+      # up boundary
+      tf.math.abs(pred_map[y_start,x_start:x_end,0] - box[0]),
+      tf.math.abs(pred_map[y_start,x_start:x_end,2] - cube_h*(y_start+1)),
+    ],axis=-1)
     tmp_ys = tf.where(tmp_ys > (1. / sigma_2),tmp_ys - (0.5 / sigma_2),tf.pow(tmp_ys, 2) * (sigma_2 / 2.))
-    tmp_ye = tf.math.abs(pred_map[y_end,x_start:x_end,2] - box[2])
+    tmp_ye = tf.stack([
+      # down boundary
+      tf.math.abs(pred_map[y_end,x_start:x_end,0] - cube_h*(y_end-1)),
+      tf.math.abs(pred_map[y_end,x_start:x_end,2] - box[2]),
+    ],axis=-1)
     tmp_ye = tf.where(tmp_ye > (1. / sigma_2),tmp_ye - (0.5 / sigma_2),tf.pow(tmp_ye, 2) * (sigma_2 / 2.))
-    tmp_xs = tf.math.abs(pred_map[y_start:y_end,x_start,1] - box[1])
+    tmp_xs = tf.stack([
+      # down boundary
+      tf.math.abs(pred_map[y_start:y_end,x_start,1] - box[1]),
+      tf.math.abs(pred_map[y_start:y_end,x_start,3] - cube_w*(x_start+1)),
+    ],axis=-1)
     tmp_xs = tf.where(tmp_xs > (1. / sigma_2),tmp_xs - (0.5 / sigma_2),tf.pow(tmp_xs, 2) * (sigma_2 / 2.))
-    tmp_xe = tf.math.abs(pred_map[y_start:y_end,x_end,3] - box[3])
+    tmp_xe = tf.stack([
+      # down boundary
+      tf.math.abs(pred_map[y_start:y_end,x_end,3] - cube_w*(x_end-1)),
+      tf.math.abs(pred_map[y_start:y_end,x_end,3] - box[3]),
+    ],axis=-1)
     tmp_xe = tf.where(tmp_xe > (1. / sigma_2),tmp_xe - (0.5 / sigma_2),tf.pow(tmp_xe, 2) * (sigma_2 / 2.))
     tmp_det = tf.math.reduce_mean(tmp_ys)/box_h+tf.math.reduce_mean(tmp_ye)/box_h+tf.math.reduce_mean(tmp_xs)/box_w+tf.math.reduce_mean(tmp_xe)/box_w
 
@@ -309,7 +324,8 @@ def pre_box_loss(gt_box, pred_map, org_size=None, sigma=1.0):
     y_end-=1
     x_start+=1
     x_end-=1
-    if(y_start<y_end and x_start<x_end):
+    # if(y_start<y_end and x_start<x_end):
+    if(False):
       # tmp_ys = tf.math.abs(pred_map[y_start:y_end,x_start:x_end,0] - det_cy[y_start:y_end,x_start:x_end])
       tmp_ys = tf.where(pred_map[y_start:y_end,x_start:x_end,0]<box[0])
       if(tmp_ys.shape[0]>0):

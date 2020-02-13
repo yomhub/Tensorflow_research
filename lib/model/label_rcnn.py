@@ -183,14 +183,42 @@ class Label_RCNN(tf.keras.Model):
     l2_feat = self.rpn_L2_conv(l2_feat)
     l3_feat = self.rpn_L3_conv(l3_feat)
 
+    # limit every bbox difference value in [-1,1] 
     l1_score = self.rpn_L1_cls_score(l1_feat)
-    l1_bbox = self.rpn_L1_bbox_pred(l1_feat) + self.rpn_l1_det
+    l1_bbox = self.rpn_L1_bbox_pred(l1_feat)
+    l1_bbox = tf.concat([
+      # limit det y1,x1 in [0,0.5~0.6] because we use 
+      # round down GT y1,x1, so it only had positive det
+      tf.reshape(tf.clip_by_value(l1_bbox[:,:,:,0],0.0,0.6)*self.rpn_L1_rec_fild[0],l1_bbox.shape[:3]+[1]),
+      tf.reshape(tf.clip_by_value(l1_bbox[:,:,:,1],0.0,0.6)*self.rpn_L1_rec_fild[1],l1_bbox.shape[:3]+[1]),
+      # Use round up GT y2,x2, so it only had negative det
+      tf.reshape(tf.clip_by_value(l1_bbox[:,:,:,2],-0.6,0.0)*self.rpn_L1_rec_fild[0],l1_bbox.shape[:3]+[1]),
+      tf.reshape(tf.clip_by_value(l1_bbox[:,:,:,3],-0.6,0.0)*self.rpn_L1_rec_fild[1],l1_bbox.shape[:3]+[1]),
+      ],
+      axis=-1)
+    l1_bbox += self.rpn_l1_det
     # l1_ort = tf.nn.softmax(self.rpn_L1_window(l1_feat),axis=-1)
     l2_score = self.rpn_L2_cls_score(l2_feat)
-    l2_bbox = self.rpn_L2_bbox_pred(l2_feat) + self.rpn_l2_det
+    l2_bbox = self.rpn_L2_bbox_pred(l2_feat)
+    l2_bbox = tf.concat([
+      tf.reshape(tf.clip_by_value(l2_bbox[:,:,:,0],0.0,0.6)*self.rpn_L2_rec_fild[0],l2_bbox.shape[:3]+[1]),
+      tf.reshape(tf.clip_by_value(l2_bbox[:,:,:,1],0.0,0.6)*self.rpn_L2_rec_fild[1],l2_bbox.shape[:3]+[1]),
+      tf.reshape(tf.clip_by_value(l2_bbox[:,:,:,2],-0.6,0.0)*self.rpn_L2_rec_fild[0],l2_bbox.shape[:3]+[1]),
+      tf.reshape(tf.clip_by_value(l2_bbox[:,:,:,3],-0.6,0.0)*self.rpn_L2_rec_fild[1],l2_bbox.shape[:3]+[1]),
+      ],
+      axis=-1)
+    l2_bbox += self.rpn_l2_det
     # l2_ort = tf.nn.softmax(self.rpn_L2_window(l2_feat),axis=-1)
     l3_score = self.rpn_L3_cls_score(l3_feat)
-    l3_bbox = self.rpn_L3_bbox_pred(l3_feat) + self.rpn_l3_det
+    l3_bbox = self.rpn_L3_bbox_pred(l3_feat)
+    l3_bbox = tf.concat([
+      tf.reshape(tf.clip_by_value(l3_bbox[:,:,:,0],0.0,0.6)*self.rpn_L3_rec_fild[0],l3_bbox.shape[:3]+[1]),
+      tf.reshape(tf.clip_by_value(l3_bbox[:,:,:,1],0.0,0.6)*self.rpn_L3_rec_fild[1],l3_bbox.shape[:3]+[1]),
+      tf.reshape(tf.clip_by_value(l3_bbox[:,:,:,2],-0.6,0.0)*self.rpn_L3_rec_fild[0],l3_bbox.shape[:3]+[1]),
+      tf.reshape(tf.clip_by_value(l3_bbox[:,:,:,3],-0.6,0.0)*self.rpn_L3_rec_fild[1],l3_bbox.shape[:3]+[1]),
+      ],
+      axis=-1)
+    l3_bbox += self.rpn_l3_det
     # l3_ort = tf.nn.softmax(self.rpn_L3_window(l3_feat),axis=-1)
 
     # 
@@ -231,7 +259,7 @@ class LRCNNLoss(tf.keras.losses.Loss):
   def _boxes_loss(self,box_prd,y_true):
     loss_value = pre_box_loss(y_true,box_prd,self.imge_size)
     # loss_value = loss_value / tf.math.reduce_sum((y_true[:,2]-y_true[:,0])*(y_true[:,3]-y_true[:,1]))
-    return tf.math.reduce_sum(loss_value)
+    return tf.math.reduce_mean(loss_value)
 
   def call(self, y_true, y_pred):
     if(self.gtformat=='xywh'):
@@ -279,4 +307,4 @@ class LRCNNLoss(tf.keras.losses.Loss):
       "l3_box_loss" : l3_box_loss,
     }
 
-    return l1_label_loss + l2_label_loss + l3_label_loss# + l1_box_loss + l2_box_loss + l3_box_loss
+    return l1_label_loss + l2_label_loss + l3_label_loss + l1_box_loss + l2_box_loss + l3_box_loss

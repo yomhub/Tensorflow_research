@@ -52,11 +52,13 @@ class Trainer():
     log_num = log_num if log_num<tfimg.shape[0] else int(tfimg.shape[0])
     if(name == None):
       name = "{} images.".format(log_num)
+    if(tf.reduce_max(tfimg)>1.0):
+      tfimg = tfimg/256.0
     with self.file_writer.as_default():
       # # Don't forget to resize.
       # if(img_size!=None):
       #   tfimg = tf.image.resize(tfimg, img_size)
-      tf.summary.image(name, tfimg/256.0, step=0, max_outputs=log_num)
+      tf.summary.image(name, tfimg, step=0, max_outputs=log_num)
   
   def set_trainer(self,model=None,loss=None,opt=None,data_count=None):
     if(model!=None):

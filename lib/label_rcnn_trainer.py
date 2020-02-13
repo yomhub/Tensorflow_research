@@ -4,6 +4,7 @@ import numpy as np
 from tflib.log_tools import _str2time, _str2num, _auto_scalar, _auto_image
 from tflib.evaluate_tools import draw_boxes, check_nan
 from tflib.bbox_transform import xywh2yxyx, label_layer
+from tflib.img_tools import label_overlap_tf, gen_label_from_prob
 from datetime import datetime
 from trainer import Trainer
 
@@ -87,12 +88,20 @@ class LRCNNTrainer(Trainer):
       gt_box = xywh2yxyx(y_single[:,1:])
     else:
       gt_box = y_single[:,1:]
+    l1op = tf.reduce_sum(label_overlap_tf(gt_box,x_single.shape[1:3],gen_label_from_prob(y_pred["l1_score"])))
+    l2op = tf.reduce_sum(label_overlap_tf(gt_box,x_single.shape[1:3],gen_label_from_prob(y_pred["l2_score"])))
+    l3op = tf.reduce_sum(label_overlap_tf(gt_box,x_single.shape[1:3],gen_label_from_prob(y_pred["l3_score"])))
+    _auto_scalar(l1op,step,"L1 overlap")
+    _auto_scalar(l2op,step,"L2 overlap")
+    _auto_scalar(l3op,step,"L3 overlap")
     bx_img = self.draw_gt_pred_box(y_pred,tf.stack([y_single[:,0],gt_box[:,0]/imgh,gt_box[:,1]/imgw,gt_box[:,2]/imgh,gt_box[:,3]/imgw],axis=1), x_single)
     gt_box = tf.stack([gt_box[:,0]/imgh,gt_box[:,1]/imgw,gt_box[:,2]/imgh,gt_box[:,3]/imgw],axis=1)
     gt_box = tf.reshape(gt_box,[1,]+gt_box.shape[-2:])
-    gt_box_img = tf.image.draw_bounding_boxes(x_single,gt_box,tf.convert_to_tensor([[1.0,1.0,0.0]]))
+    # gt_box_img = tf.image.draw_bounding_boxes(x_single,gt_box,tf.convert_to_tensor([[1.0,1.0,0.0]]))
     with self.file_writer.as_default():
-      tf.summary.image(name="Boxed image in step {}.".format(self.current_step),data=gt_box_img/256.0,step=step,description='GT boxes.')
+      # if(tf.reduce_max(gt_box_img)>1.0):
+      #   gt_box_img = gt_box_img/256.0
+      # tf.summary.image(name="Boxed image in step {}.".format(self.current_step),data=gt_box_img,step=step,description='GT boxes.')
       tf.summary.image(name="Boxed image in step {}.".format(self.current_step),data=bx_img/256.0,step=step,description='Predict boxes.')
     return 0
 
