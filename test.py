@@ -34,7 +34,7 @@ if __name__ == "__main__":
   print("\t Optimizer: {}.\n".format(args.opt))
 
   isdebug = args.debug
-  # isdebug = True
+  isdebug = True
   learning_rate = args.learnrate
   
   if(args.opt.lower()=='sgd'):
@@ -51,7 +51,7 @@ if __name__ == "__main__":
 
   if(args.net=='frcnn'):
     # faster RCNN
-    trainer = FRCNNTrainer(isdebug=isdebug,task_name="FRCNN_with_{}_{}".format(args.proposal,args.dataset))
+    trainer = FRCNNTrainer(isdebug=isdebug,task_name="FRCNN_with_{}_{}_{}".format(args.proposal,args.dataset,args.opt))
     model = Faster_RCNN(num_classes=2,bx_choose=args.proposal)
     loss = RCNNLoss(cfg=cfg,cfg_name="TRAIN",gtformat=gtformat)
   else:

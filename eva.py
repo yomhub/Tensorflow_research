@@ -14,8 +14,8 @@ if __name__ == "__main__":
   parser = argparse.ArgumentParser(description='Choose settings.')
   parser.add_argument('--net', help='Choose noework (frcnn/lrcnn).', default="lrcnn")
   parser.add_argument('--dataset', help='Choose dataset.', default="svt")
-  parser.add_argument('--datax', type=int, help='Dataset output width.',default=1024)
-  parser.add_argument('--datay', type=int, help='Dataset output height.',default=1024)
+  parser.add_argument('--datax', type=int, help='Dataset output width.',default=1280)
+  parser.add_argument('--datay', type=int, help='Dataset output height.',default=720)
   parser.add_argument('--step', type=int, help='Step size.',default=5)
   parser.add_argument('--batch', type=int, help='Batch size.',default=20)
   parser.add_argument('--tname', help='Name of task, same with model dir.', default="LRCNN_with_svt_adam")
@@ -36,15 +36,14 @@ if __name__ == "__main__":
     # faster RCNN
     trainer = FRCNNTrainer(isdebug=False,task_name=args.tname)
     model = Faster_RCNN(num_classes=2,bx_choose=args.proposal)
-    model(tf.zeros([1,args.datax,args.datay,3],dtype=tf.float32))
     loss = RCNNLoss(cfg=cfg,cfg_name="TRAIN",gtformat=gtformat)
   else:
     # label RCNN
-    trainer = LRCNNTrainer(isdebug=False,task_name=args.tname)
+    trainer = LRCNNTrainer(isdebug=False,task_name=args.tname,gtformat=gtformat)
     model = Label_RCNN(num_classes=2)
-    model(tf.zeros([1,args.datax,args.datay,3],dtype=tf.float32))
     loss = LRCNNLoss(imge_size=[args.datax,args.datay],gtformat=gtformat)
     
+  model(tf.zeros([1,args.datay,args.datax,3],dtype=tf.float32))
   model = trainer.load(model)
   if(model!=None):
     x_test, y_test = mydatalog.read_test_batch(10)

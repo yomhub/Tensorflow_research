@@ -23,12 +23,13 @@ class Trainer():
 
     """
     super(Trainer,self).__init__()
+    self.isdebug = isdebug if isdebug else False
     self.logs_path = logs_path if task_name == None else os.path.join(logs_path,task_name)
     self.model_path = model_path if task_name == None else os.path.join(model_path,task_name)
-    self.logs_path = os.path.join(self.logs_path,datetime.now().strftime("%Y%m%d-%H%M%S"))
+    if(not(self.isdebug)):
+      self.logs_path = os.path.join(self.logs_path,datetime.now().strftime("%Y%m%d-%H%M%S"))
     if(not(os.path.exists(self.logs_path))):
       os.makedirs(self.logs_path)
-    self.isdebug = isdebug if isdebug else False
     if(self.isdebug):
       self.file_writer = None
     else:
@@ -91,7 +92,8 @@ class Trainer():
     assert(total_data==len(y_val))
 
     logger = open(os.path.join(self.logs_path,'evaluate.txt'),'a+',encoding='utf8')
-    
+    if(not(self.isdebug)):
+      logger.write(datetime.now().strftime("%Y%m%d-%H%M%S")+'\n')
     if(model!=None):
       self.model = model
     else:
@@ -125,6 +127,8 @@ class Trainer():
     cur_stp = self.current_step
 
     logger = open(os.path.join(self.logs_path,'result.txt'),'a+',encoding='utf8')
+    if(not(self.isdebug)):
+      logger.write(datetime.now().strftime("%Y%m%d-%H%M%S")+'\n')
     if(type(y_train)==list):
       assert(total_data==len(y_train))
 

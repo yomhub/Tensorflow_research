@@ -39,31 +39,36 @@ class Label_RCNN(tf.keras.Model):
     imgh = input_shape[-3]
     imgw = input_shape[-2]
     if(self.feature_layer_name=='vgg16'):
-      vgg16=tf.keras.applications.VGG16(weights='imagenet', include_top=False)
+      vgg16=tf.keras.applications.VGG16(
+        input_tensor=tf.keras.Input(shape=input_shape[-3:]),
+        weights='imagenet', 
+        include_top=False)
       self.feature_model = tf.keras.Model(
-        inputs=vgg16.input,
+        inputs=vgg16.inputs,
         outputs=[
           # vgg16.get_layer('block2_conv2').output,
           # 2*2 128
-          vgg16.get_layer('block3_conv3').output,
+          # vgg16.get_layer('block3_conv3').output,
           # 4*4 256
-          # vgg16.get_layer('block3_pool').output,
+          vgg16.get_layer('block3_pool').output,
           # 8*8 256
-          vgg16.get_layer('block4_conv3').output,
+          # vgg16.get_layer('block4_conv3').output,
           # 8*8 512
-          # vgg16.get_layer('block4_pool').output,
+          vgg16.get_layer('block4_pool').output,
           # 16*16 512
-          vgg16.get_layer('block5_conv3').output
+          # vgg16.get_layer('block5_conv3').output
           # 16*16 512
+          vgg16.get_layer('block5_pool').output
+          # 32*32 512
         ],
         name=self.feature_layer_name
       )
-      self.rpn_L1_wshape = [1,1,256]
-      self.rpn_L2_wshape = [1,1,512]
-      self.rpn_L3_wshape = [1,1,512]
-      self.rpn_L1_rec_fild = [4,4]
-      self.rpn_L2_rec_fild = [8,8]
-      self.rpn_L3_rec_fild = [16,16]
+      self.rpn_L1_wshape = [1,1,self.feature_model.output[0].shape[-1]]
+      self.rpn_L2_wshape = [1,1,self.feature_model.output[1].shape[-1]]
+      self.rpn_L3_wshape = [1,1,self.feature_model.output[2].shape[-1]]
+      self.rpn_L1_rec_fild = [int(imgh/self.feature_model.output[0].shape[-3]),int(imgw/self.feature_model.output[0].shape[-2])]
+      self.rpn_L2_rec_fild = [int(imgh/self.feature_model.output[1].shape[-3]),int(imgw/self.feature_model.output[1].shape[-2])]
+      self.rpn_L3_rec_fild = [int(imgh/self.feature_model.output[2].shape[-3]),int(imgw/self.feature_model.output[2].shape[-2])]
     elif(self.feature_layer_name=='resnet'):
       rn=tf.keras.applications.resnet_v2.ResNet101V2()
         # rn.get_layer("conv1_pad"), rn.get_layer("conv1_conv"), rn.get_layer("pool1_pad"), rn.get_layer("pool1_pool"),
@@ -207,7 +212,7 @@ class LRCNNLoss(tf.keras.losses.Loss):
   def __init__(self,imge_size,gtformat='yxyx'):
     super(LRCNNLoss, self).__init__()
     gtformat = gtformat.lower()
-    if(gtformat=='yxyx' or gtformat=='yx'):
+    if(gtformat.lower()=='yxyx' or gtformat.lower()=='yx'):
       self.gtformat='yxyx'
     else:
       self.gtformat='xywh'
@@ -217,7 +222,8 @@ class LRCNNLoss(tf.keras.losses.Loss):
     labels = label_layer(pred_score.shape[1:3],y_true,self.imge_size)
     labels = tf.reshape(labels,[-1])
     select = tf.reshape(tf.where(tf.not_equal(labels, -1)),[-1])
-    score = tf.gather(tf.reshape(pred_score,[-1,2]), select)
+    score = tf.reshape(pred_score,[-1,2])
+    score = tf.gather(score, select)
     labels = tf.gather(labels,select)
     return tf.reduce_mean(
       tf.nn.sparse_softmax_cross_entropy_with_logits(logits=score, labels=labels))
@@ -273,4 +279,4 @@ class LRCNNLoss(tf.keras.losses.Loss):
       "l3_box_loss" : l3_box_loss,
     }
 
-    return l1_label_loss + l2_label_loss + l3_label_loss + l1_box_loss + l2_box_loss + l3_box_loss
+    return l1_label_loss + l2_label_loss + l3_label_loss# + l1_box_loss + l2_box_loss + l3_box_loss
