@@ -95,12 +95,12 @@ if __name__ == "__main__":
       x_train = x_train / 256.0
       # x_val = x_val / 256.0
       trainer.fit(x_train,y_train,model,loss,optimizer)
-      if(i%4==0):
+      if(i<11):
         trainer.evaluate(x_val,y_val)
         trainer.evaluate(x_train[0:2],y_val[0:2])
-      if(i%10==0):
-        trainer.set_trainer(data_count=mydatalog._init_conter)
-        trainer.save()
+      # if(i%10==0):
+      #   trainer.set_trainer(data_count=mydatalog._init_conter)
+      #   trainer.save()
   
   time_usage = datetime.now()
   print("End at: {}.\n".format(time_usage.strftime("%Y%m%d-%H%M%S")))

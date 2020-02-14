@@ -106,7 +106,7 @@ def feat_layer_cod_gen(org_size,feat_size,class_num=1):
       tensor with (1,fh,fw,class_num*4) shape
       where 4 is [dy1,dx1,dy2,dx2]
   """
-  cube_h,cube_w = int(org_size[0] / feat_size[0]),int(org_size[1] / feat_size[1])
+  cube_h,cube_w = float(org_size[0] / feat_size[0]),float(org_size[1] / feat_size[1])
   det_cx,det_cy = tf.meshgrid(
     tf.range(0,feat_size[1]+2,dtype=tf.float32)*cube_w,
     tf.range(0,feat_size[0]+2,dtype=tf.float32)*cube_h)  
@@ -139,7 +139,7 @@ def map2coordinate(boxes,org_cod,targ_cod):
   
   return tf.stack([boxes[:,0]*fact_y,boxes[:,1]*fact_x,boxes[:,2]*fact_y,boxes[:,3]*fact_x],axis=1)
 
-def label_layer(layer_shape,gt_box,img_shape=None):
+def gen_label_from_gt(layer_shape,gt_box,img_shape=None,bg_label=-1):
   """
     Args: 
       layer_shape: layer shape [layer_height，layer_width]
@@ -161,7 +161,7 @@ def label_layer(layer_shape,gt_box,img_shape=None):
   gtlabel = gt_box[:,0].numpy()
   gtlabel = gtlabel.astype(np.int32)
   bbox = tf.stack([gt_box[:,1]*fact_y,gt_box[:,2]*fact_x,gt_box[:,3]*fact_y,gt_box[:,4]*fact_x],axis=1).numpy()
-  label_np = np.full(layer_shape,-1,np.int32)
+  label_np = np.full(layer_shape,bg_label,np.int32)
   for i in range(gtlabel.shape[0]):
     x1 = max(math.floor(bbox[i,1]),0)
     y1 = max(math.floor(bbox[i,0]),0)
@@ -285,45 +285,59 @@ def pre_box_loss(gt_box, pred_map, org_size=None, sigma=1.0):
     cube_h,cube_w = 1,1
   else:
     feat_h,feat_w = pred_map.shape[-3]/org_size[0],pred_map.shape[-2]/org_size[1]
-    cube_h,cube_w = int(org_size[0]/pred_map.shape[-3]),int(org_size[1]/pred_map.shape[-2])
+    cube_h,cube_w = org_size[0]/pred_map.shape[-3],org_size[1]/pred_map.shape[-2]
     
   gt_box = gt_box.numpy()
-  abs_det = []
-
+  abs_boundary_det = []
+  abs_inside_det = []
   for box in gt_box:
     box_h,box_w = box[2]-box[0],box[3]-box[1]
-    y_start,y_end = math.floor(box[0]*feat_h),min(math.ceil(box[2]*feat_h),pred_map.shape[-3]-1)
-    x_start,x_end = math.floor(box[1]*feat_w),min(math.ceil(box[3]*feat_w),pred_map.shape[-2]-1)
+    # y_start,y_end = math.floor(box[0]*feat_h),min(math.ceil(box[2]*feat_h),pred_map.shape[-3]-1)
+    # x_start,x_end = math.floor(box[1]*feat_w),min(math.ceil(box[3]*feat_w),pred_map.shape[-2]-1)
+    x_start,x_end = box[1] / cube_w,box[3] / cube_w
+    y_start,y_end = box[0] / cube_h,box[2] / cube_h
+    x_start = math.floor(x_start) if(x_start - int(x_start)) < 0.8 else math.ceil(x_start)
+    y_start = math.floor(y_start) if(y_start - int(y_start)) < 0.8 else math.ceil(y_start)
+    x_end = math.floor(x_end) if(x_end - int(x_end)) < 0.2 else math.ceil(x_end)
+    y_end = math.floor(y_end) if(y_end - int(y_end)) < 0.2 else math.ceil(y_end)
+
+    tmp_tag = cube_h*(y_start+1) if ((y_end-1)>y_start) else box[2]
     tmp_ys = tf.stack([
       # up boundary
       tf.math.abs(pred_map[y_start,x_start:x_end,0] - box[0]),
-      tf.math.abs(pred_map[y_start,x_start:x_end,2] - cube_h*(y_start+1)),
+      tf.math.abs(pred_map[y_start,x_start:x_end,2] - tmp_tag),
     ],axis=-1)
     tmp_ys = tf.where(tmp_ys > (1. / sigma_2),tmp_ys - (0.5 / sigma_2),tf.pow(tmp_ys, 2) * (sigma_2 / 2.))
-    tmp_ye = tf.stack([
-      # down boundary
-      tf.math.abs(pred_map[y_end,x_start:x_end,0] - cube_h*(y_end-1)),
-      tf.math.abs(pred_map[y_end,x_start:x_end,2] - box[2]),
-    ],axis=-1)
-    tmp_ye = tf.where(tmp_ye > (1. / sigma_2),tmp_ye - (0.5 / sigma_2),tf.pow(tmp_ye, 2) * (sigma_2 / 2.))
+    tmp_ye = 0.0
+    if((y_end-1)>y_start):
+      tmp_ye = tf.stack([
+        # down boundary
+        tf.math.abs(pred_map[(y_end-1),x_start:x_end,0] - cube_h*(y_end-1)),
+        tf.math.abs(pred_map[(y_end-1),x_start:x_end,2] - box[2]),
+      ],axis=-1)
+      tmp_ye = tf.where(tmp_ye > (1. / sigma_2),tmp_ye - (0.5 / sigma_2),tf.pow(tmp_ye, 2) * (sigma_2 / 2.))
+    tmp_tag = cube_w*(x_start+1) if ((x_end-1)>x_start) else box[3]
     tmp_xs = tf.stack([
       # down boundary
       tf.math.abs(pred_map[y_start:y_end,x_start,1] - box[1]),
-      tf.math.abs(pred_map[y_start:y_end,x_start,3] - cube_w*(x_start+1)),
+      tf.math.abs(pred_map[y_start:y_end,x_start,3] - tmp_tag),
     ],axis=-1)
     tmp_xs = tf.where(tmp_xs > (1. / sigma_2),tmp_xs - (0.5 / sigma_2),tf.pow(tmp_xs, 2) * (sigma_2 / 2.))
-    tmp_xe = tf.stack([
-      # down boundary
-      tf.math.abs(pred_map[y_start:y_end,x_end,3] - cube_w*(x_end-1)),
-      tf.math.abs(pred_map[y_start:y_end,x_end,3] - box[3]),
-    ],axis=-1)
-    tmp_xe = tf.where(tmp_xe > (1. / sigma_2),tmp_xe - (0.5 / sigma_2),tf.pow(tmp_xe, 2) * (sigma_2 / 2.))
+    tmp_xe = 0.0
+    if((x_end-1)>x_start):
+      tmp_xe = tf.stack([
+        # down boundary
+        tf.math.abs(pred_map[y_start:y_end,(x_end-1),3] - cube_w*(x_end-1)),
+        tf.math.abs(pred_map[y_start:y_end,(x_end-1),3] - box[3]),
+      ],axis=-1)
+      tmp_xe = tf.where(tmp_xe > (1. / sigma_2),tmp_xe - (0.5 / sigma_2),tf.pow(tmp_xe, 2) * (sigma_2 / 2.))
     tmp_det = tf.math.reduce_mean(tmp_ys)/box_h+tf.math.reduce_mean(tmp_ye)/box_h+tf.math.reduce_mean(tmp_xs)/box_w+tf.math.reduce_mean(tmp_xe)/box_w
 
     y_start+=1
     y_end-=1
     x_start+=1
     x_end-=1
+    tmp_in_det = 0.0
     # if(y_start<y_end and x_start<x_end):
     if(False):
       # tmp_ys = tf.math.abs(pred_map[y_start:y_end,x_start:x_end,0] - det_cy[y_start:y_end,x_start:x_end])
@@ -331,28 +345,28 @@ def pre_box_loss(gt_box, pred_map, org_size=None, sigma=1.0):
       if(tmp_ys.shape[0]>0):
         tmp_ys = tf.math.abs(tf.gather_nd(pred_map[y_start:y_end,x_start:x_end,0],tmp_ys) - box[0])
         tmp_ys = tf.where(tmp_ys > (1. / sigma_2),tmp_ys - (0.5 / sigma_2),tf.pow(tmp_ys, 2) * (sigma_2 / 2.))
-        tmp_det += tf.math.reduce_mean(tmp_ys)/box_h
+        tmp_in_det += tf.math.reduce_mean(tmp_ys)/box_h
 
       # tmp_ye = tf.math.abs(pred_map[y_start:y_end,x_start:x_end,2] - det_cy[(y_start+1):(y_end+1),(x_start+1):(x_end+1)])
       tmp_ye = tf.where(pred_map[y_start:y_end,x_start:x_end,2]>box[2])
       if(tmp_ye.shape[0]>0):
         tmp_ye = tf.math.abs(tf.gather_nd(pred_map[y_start:y_end,x_start:x_end,2],tmp_ye) - box[2])
         tmp_ye = tf.where(tmp_ye > (1. / sigma_2),tmp_ye - (0.5 / sigma_2),tf.pow(tmp_ye, 2) * (sigma_2 / 2.))
-        tmp_det += tf.math.reduce_mean(tmp_ye)/box_h
+        tmp_in_det += tf.math.reduce_mean(tmp_ye)/box_h
 
       # tmp_xs = tf.math.abs(pred_map[y_start:y_end,x_start:x_end,1] - det_cx[y_start:y_end,x_start:x_end])
       tmp_xs = tf.where(pred_map[y_start:y_end,x_start:x_end,1]<box[1])
       if(tmp_xs.shape[0]>0):
         tmp_xs = tf.math.abs(tf.gather_nd(pred_map[y_start:y_end,x_start:x_end,1],tmp_xs) - box[1])
         tmp_xs = tf.where(tmp_xs > (1. / sigma_2),tmp_xs - (0.5 / sigma_2),tf.pow(tmp_xs, 2) * (sigma_2 / 2.))
-        tmp_det += tf.math.reduce_mean(tmp_xs)/box_w
+        tmp_in_det += tf.math.reduce_mean(tmp_xs)/box_w
 
       # tmp_xe = tf.math.abs(pred_map[y_start:y_end,x_start:x_end,3] - det_cx[(y_start+1):(y_end+1),(x_start+1):(x_end+1)])
       tmp_xe = tf.where(pred_map[y_start:y_end,x_start:x_end,3]>box[3])
       if(tmp_xe.shape[0]>0):
         tmp_xe = tf.math.abs(tf.gather_nd(pred_map[y_start:y_end,x_start:x_end,3],tmp_xe) - box[3])
         tmp_xe = tf.where(tmp_xe > (1. / sigma_2),tmp_xe - (0.5 / sigma_2),tf.pow(tmp_xe, 2) * (sigma_2 / 2.))
-        tmp_det += tf.math.reduce_mean(tmp_xe)/box_w
+        tmp_in_det += tf.math.reduce_mean(tmp_xe)/box_w
 
       # tmp_y = tf.math.abs(pred_map[y_start,x_start:x_end,0] - det_cy[y_start:y_end,x_start:x_end]) \
       #   + tf.math.abs(pred_map[y_end,x_start:x_end,2] - det_cy[(y_start+1):(y_end+1),(x_start+1):(x_end+1)])
@@ -361,6 +375,7 @@ def pre_box_loss(gt_box, pred_map, org_size=None, sigma=1.0):
       #   + tf.math.abs(pred_map[y_end,x_start:x_end,3] - det_cx[(y_start+1):(y_end+1),(x_start+1):(x_end+1)])
       # tmp_x = tf.where(tmp_x > (1. / sigma_2),tmp_x - (0.5 / sigma_2),tf.pow(tmp_x, 2) * (sigma_2 / 2.))
       # tmp_det += tf.math.reduce_sum(tmp_y)+tf.math.reduce_sum(tmp_x)
-    abs_det+=[tmp_det]
-  return tf.convert_to_tensor(abs_det)
+    abs_boundary_det+=[tmp_det]
+    abs_inside_det+=[tmp_in_det]
+  return tf.convert_to_tensor(abs_boundary_det)
 

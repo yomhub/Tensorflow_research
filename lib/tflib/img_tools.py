@@ -161,6 +161,7 @@ def label_overlap_tf(gt_boxes,org_size,feat_label):
   """
     Args:
       gt_boxes: tensor (gt_num,5) with [label,y1,x1,y2,x2]
+        or (gt_num,4)
       org_size: [h,w] of original image
       feat_label: tensor (h,w) with [label]
     Return:
@@ -168,8 +169,13 @@ def label_overlap_tf(gt_boxes,org_size,feat_label):
   """
   feat_h,feat_w = feat_label.shape[0]/org_size[0],feat_label.shape[1]/org_size[1]
   # cube_h,cube_w = int(org_size[0]/feat_label.shape[0]),int(org_size[1]/feat_label.shape[1])
-  labels = gt_boxes[:,0].numpy().astype(np.int16)
-  gt_boxes = tf.stack([gt_boxes[:,1]*feat_h,gt_boxes[:,0]*feat_w,gt_boxes[:,2]*feat_h,gt_boxes[:,3]*feat_w],axis=-1).numpy()
+  if(gt_boxes.shape[1]==4):
+    labels = np.full([gt_boxes.shape[0]],1,dtype=np.int16)
+    gt_boxes = tf.stack([gt_boxes[:,0]*feat_h,gt_boxes[:,1]*feat_w,gt_boxes[:,2]*feat_h,gt_boxes[:,3]*feat_w],axis=-1).numpy()
+  else:
+    labels = gt_boxes[:,0].numpy().astype(np.int16)
+    gt_boxes = tf.stack([gt_boxes[:,1]*feat_h,gt_boxes[:,2]*feat_w,gt_boxes[:,3]*feat_h,gt_boxes[:,4]*feat_w],axis=-1).numpy()
+
   feat_label = feat_label.numpy().astype(np.int16)
   overlaps = []
   for i in range(labels.shape[0]):
