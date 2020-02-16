@@ -190,7 +190,13 @@ class Label_RCNN(tf.keras.Model):
 
     # limit every bbox difference value in [-1,1] 
     l1_score = self.rpn_L1_cls_score(l1_feat)
+    l2_score = self.rpn_L2_cls_score(l2_feat)
+    l3_score = self.rpn_L3_cls_score(l3_feat)
+
     l1_bbox = self.rpn_L1_bbox_pred(l1_feat)
+    l2_bbox = self.rpn_L2_bbox_pred(l2_feat)
+    l3_bbox = self.rpn_L3_bbox_pred(l3_feat)
+
     l1_bbox = tf.stack([
       # limit det y1,x1 in [0,0.5~0.6] because we use 
       # round down GT y1,x1, so it only had positive det
@@ -202,8 +208,6 @@ class Label_RCNN(tf.keras.Model):
       ],
       axis=-1)
     # l1_ort = tf.nn.softmax(self.rpn_L1_window(l1_feat),axis=-1)
-    l2_score = self.rpn_L2_cls_score(l2_feat)
-    l2_bbox = self.rpn_L2_bbox_pred(l2_feat)
     l2_bbox = tf.stack([
       tf.clip_by_value(l2_bbox[:,:,:,0],self.neg_rect,self.pst_rect)*self.rpn_L2_rec_fild[0],
       tf.clip_by_value(l2_bbox[:,:,:,1],self.neg_rect,self.pst_rect)*self.rpn_L2_rec_fild[1],
@@ -212,8 +216,6 @@ class Label_RCNN(tf.keras.Model):
       ],
       axis=-1)
     # l2_ort = tf.nn.softmax(self.rpn_L2_window(l2_feat),axis=-1)
-    l3_score = self.rpn_L3_cls_score(l3_feat)
-    l3_bbox = self.rpn_L3_bbox_pred(l3_feat)
     l3_bbox = tf.stack([
       tf.clip_by_value(l3_bbox[:,:,:,0],self.neg_rect,self.pst_rect)*self.rpn_L3_rec_fild[0],
       tf.clip_by_value(l3_bbox[:,:,:,1],self.neg_rect,self.pst_rect)*self.rpn_L3_rec_fild[1],
@@ -253,15 +255,26 @@ class LRCNNLoss(tf.keras.losses.Loss):
     self.imge_size = imge_size
 
   def _label_loss(self,pred_score,y_true):
-    labels = gen_label_from_gt(pred_score.shape[1:3],y_true,self.imge_size,-1)
+    labels = gen_label_from_gt(pred_score.shape[1:3],y_true,self.imge_size,0)
     labels = tf.reshape(labels,[-1])
-    select = tf.reshape(tf.where(tf.not_equal(labels, -1)),[-1])
-    score = tf.reshape(pred_score,[-1,2])
+    # select = tf.reshape(tf.where(tf.not_equal(labels, -1)),[-1])
+    select1 = tf.reshape(tf.where(tf.equal(labels, 1)),[-1])
+    select0 = tf.reshape(tf.where(tf.equal(labels, 0)),[-1])
+    # score = tf.gather(tf.reshape(pred_score,[-1,2]), select)
+    score = tf.concat([
+      tf.gather(tf.reshape(pred_score[:,1],[-1]), select1),
+      tf.gather(tf.reshape(pred_score[:,0],[-1]), select0),
+      ],axis=0)
+    labels = tf.cast(tf.concat([
+      tf.gather(labels, select1),
+      tf.gather(labels, select0),
+      ],axis=0),tf.float32)
+    # labels = tf.gather(labels,select)
     # score = tf.nn.softmax(tf.gather(score, select),axis=-1)
-    score = tf.nn.softmax(score,axis=-1)
-    score = tf.reshape(score[:,1],[1,select.shape[0]])
-    labels = tf.reshape(tf.gather(labels,select),[1,select.shape[0]])
-    loss = tf.keras.losses.binary_crossentropy(labels,score,from_logits=False)
+    # score = tf.reshape(score[:,1],[1,select.shape[0]])
+    # labels = tf.reshape(tf.gather(labels,select),[1,select.shape[0]])
+    # loss = tf.keras.losses.binary_crossentropy(labels,score,from_logits=False)
+    loss = tf.nn.sigmoid_cross_entropy_with_logits(logits=score, labels=labels)
     # loss = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(logits=score, labels=labels))
     return tf.reduce_mean(loss)
     
