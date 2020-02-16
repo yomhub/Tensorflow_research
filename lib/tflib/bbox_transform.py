@@ -122,15 +122,24 @@ def feat_layer_cod_gen(org_size,feat_size,class_num=1):
 
 @tf.function
 def xywh2yxyx(boxes):
-  return tf.stack([boxes[:,1],boxes[:,0],boxes[:,1]+boxes[:,3],boxes[:,0]+boxes[:,2]],axis=1)
+  """
+    Arg: boxes with tensor shape (num_box,5) or (num_box,4)
+      where 5 or 4 is ([label] +) [x,y,w,h]
+    Return: same shape tensor with ([label] +) [y1,x1,y2,x2]
+  """
+  if(boxes.shape[-1]==4):
+    boxes = tf.stack([boxes[:,-3],boxes[:,-4],boxes[:,-3]+boxes[:,-1],boxes[:,-4]+boxes[:,-2]],axis=1)
+  else:
+    boxes = tf.stack([boxes[:,0],boxes[:,-3],boxes[:,-4],boxes[:,-3]+boxes[:,-1],boxes[:,-4]+boxes[:,-2]],axis=1)
+  return boxes
 
 # @tf.function
 def map2coordinate(boxes,org_cod,targ_cod):
   """
     Args:
       boxes: (N,4) with [y1,x1,y2,x2]
-      org_cod: original coordinate [height，width]
-      targ_cod: target coordinate [height，width]
+      org_cod: original coordinate [height, width]
+      targ_cod: target coordinate [height, width]
     Return:
       boxes: (N,4) with [y1,x1,y2,x2]
   """
@@ -142,13 +151,13 @@ def map2coordinate(boxes,org_cod,targ_cod):
 def gen_label_from_gt(layer_shape,gt_box,img_shape=None,bg_label=-1):
   """
     Args: 
-      layer_shape: layer shape [layer_height，layer_width]
+      layer_shape: layer shape [layer_height, layer_width]
       gt_box: (total_gts,5) with [class, y1, x1, y2, x2]
       img_shape: 
         none with a normalized gt_box coordinate
-        or image shape [height，width]
+        or image shape [height, width]
     Return:
-      tf.int32 tensor with (layer_height，layer_width)
+      tf.int32 tensor with (layer_height, layer_width)
       where gt will label in [0,numClass-1]
       and bg is -1
   """
@@ -169,7 +178,49 @@ def gen_label_from_gt(layer_shape,gt_box,img_shape=None,bg_label=-1):
     x2 = min(math.ceil(bbox[i,3]),layer_shape[1])
     label_np[y1:y2,x1:x2]=gtlabel[i]
   return tf.convert_to_tensor(label_np,dtype=tf.int32)
-  
+
+def gen_label_with_width_from_gt(layer_shape,gt_box,img_shape=None,bg_label=-1):
+  """
+    Args: 
+      layer_shape: layer shape [layer_height, layer_width]
+      gt_box: (total_gts,5) with [class, y1, x1, y2, x2]
+      img_shape: 
+        none with a normalized gt_box coordinate
+        or image shape [height, width]
+    Return:
+      labels: tf.int32 tensor with (layer_height, layer_width)
+        where gt will label in [0,numClass-1] and bg is -1
+      weights: tf.float32 tensor wirh (layer_height, layer_width)
+        for each class, calculate areas / max area as weight
+  """
+  if(img_shape!=None):
+    fact_x = layer_shape[1]/img_shape[1]
+    fact_y = layer_shape[0]/img_shape[0]
+  else:
+    fact_x = layer_shape[1]
+    fact_y = layer_shape[0]
+  gtlabel = gt_box[:,0].numpy()
+  gtlabel = gtlabel.astype(np.int32)
+  gtarea = np.zeros((gt_box.shape[0]))
+  bbox = tf.stack([gt_box[:,1]*fact_y,gt_box[:,2]*fact_x,gt_box[:,3]*fact_y,gt_box[:,4]*fact_x],axis=1).numpy()
+  for i in range(gtlabel.max()+1):
+    slc = np.where(gtlabel==i)[0]
+    if(slc.shape[0]==0):
+      continue
+    tmp = (bbox[slc,2]-bbox[slc,0])*(bbox[slc,3]-bbox[slc,1])
+    # gtarea[slc] = (tmp-tmp.min())/(tmp.max()-tmp.min())
+    gtarea[slc] = tmp/tmp.max()
+  label_np = np.full(layer_shape,bg_label,np.int32)
+  weight_np = np.full(layer_shape,0.0)
+  for i in range(gtlabel.shape[0]):
+    x1 = max(math.floor(bbox[i,1]),0)
+    y1 = max(math.floor(bbox[i,0]),0)
+    y2 = min(math.ceil(bbox[i,2]),layer_shape[0])
+    x2 = min(math.ceil(bbox[i,3]),layer_shape[1])
+    label_np[y1:y2,x1:x2]=gtlabel[i]
+    weight_np[y1:y2,x1:x2]=gtarea[i]
+  return tf.convert_to_tensor(label_np,dtype=tf.int32),tf.convert_to_tensor(weight_np,dtype=tf.float32)
+
 def build_boxex_from_path(cls_prb,box_prd,ort_map,target_class,cls_threshold=0.7,dir_threshold=0.7):
   """
     Args:
@@ -308,6 +359,7 @@ def pre_box_loss(gt_box, pred_map, org_size=None, sigma=1.0):
       tf.math.abs(pred_map[y_start,x_start:x_end,2] - tmp_tag),
     ],axis=-1)
     tmp_ys = tf.where(tmp_ys > (1. / sigma_2),tmp_ys - (0.5 / sigma_2),tf.pow(tmp_ys, 2) * (sigma_2 / 2.))
+    tmp_ys = tf.reduce_sum(tmp_ys,axis=-1)
     tmp_ye = 0.0
     if((y_end-1)>y_start):
       tmp_ye = tf.stack([
@@ -316,6 +368,7 @@ def pre_box_loss(gt_box, pred_map, org_size=None, sigma=1.0):
         tf.math.abs(pred_map[(y_end-1),x_start:x_end,2] - box[2]),
       ],axis=-1)
       tmp_ye = tf.where(tmp_ye > (1. / sigma_2),tmp_ye - (0.5 / sigma_2),tf.pow(tmp_ye, 2) * (sigma_2 / 2.))
+      tmp_ye = tf.reduce_sum(tmp_ye,axis=-1)
     tmp_tag = cube_w*(x_start+1) if ((x_end-1)>x_start) else box[3]
     tmp_xs = tf.stack([
       # down boundary
@@ -323,6 +376,7 @@ def pre_box_loss(gt_box, pred_map, org_size=None, sigma=1.0):
       tf.math.abs(pred_map[y_start:y_end,x_start,3] - tmp_tag),
     ],axis=-1)
     tmp_xs = tf.where(tmp_xs > (1. / sigma_2),tmp_xs - (0.5 / sigma_2),tf.pow(tmp_xs, 2) * (sigma_2 / 2.))
+    tmp_xs = tf.reduce_sum(tmp_xs,axis=-1)
     tmp_xe = 0.0
     if((x_end-1)>x_start):
       tmp_xe = tf.stack([
@@ -331,6 +385,7 @@ def pre_box_loss(gt_box, pred_map, org_size=None, sigma=1.0):
         tf.math.abs(pred_map[y_start:y_end,(x_end-1),3] - box[3]),
       ],axis=-1)
       tmp_xe = tf.where(tmp_xe > (1. / sigma_2),tmp_xe - (0.5 / sigma_2),tf.pow(tmp_xe, 2) * (sigma_2 / 2.))
+      tmp_xe = tf.reduce_sum(tmp_xe,axis=-1)
     tmp_det = tf.math.reduce_mean(tmp_ys)/box_h+tf.math.reduce_mean(tmp_ye)/box_h+tf.math.reduce_mean(tmp_xs)/box_w+tf.math.reduce_mean(tmp_xe)/box_w
 
     y_start+=1

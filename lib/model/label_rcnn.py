@@ -255,19 +255,24 @@ class LRCNNLoss(tf.keras.losses.Loss):
     self.imge_size = imge_size
 
   def _label_loss(self,pred_score,y_true):
-    labels = gen_label_from_gt(pred_score.shape[1:3],y_true,self.imge_size,0)
+    labels, weights = gen_label_with_width_from_gt(pred_score.shape[1:3],y_true,self.imge_size,0)
     labels = tf.reshape(labels,[-1])
+    weights = tf.reshape(weights,[-1])
     # select = tf.reshape(tf.where(tf.not_equal(labels, -1)),[-1])
     select1 = tf.reshape(tf.where(tf.equal(labels, 1)),[-1])
     select0 = tf.reshape(tf.where(tf.equal(labels, 0)),[-1])
     # score = tf.gather(tf.reshape(pred_score,[-1,2]), select)
     score = tf.concat([
       tf.gather(tf.reshape(pred_score[:,1],[-1]), select1),
-      tf.gather(tf.reshape(pred_score[:,0],[-1]), select0),
+      # tf.gather(tf.reshape(pred_score[:,0],[-1]), select0),
       ],axis=0)
     labels = tf.cast(tf.concat([
       tf.gather(labels, select1),
-      tf.gather(labels, select0),
+      # tf.gather(labels, select0),
+      ],axis=0),tf.float32)
+    weights = tf.cast(tf.concat([
+      tf.gather(weights, select1),
+      # tf.gather(weights, select0),
       ],axis=0),tf.float32)
     # labels = tf.gather(labels,select)
     # score = tf.nn.softmax(tf.gather(score, select),axis=-1)
