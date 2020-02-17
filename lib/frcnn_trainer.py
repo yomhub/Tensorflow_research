@@ -1,7 +1,7 @@
 import os, sys
 import tensorflow as tf
 import numpy as np
-from tflib.log_tools import _str2time, _str2num, _auto_scalar, _auto_image
+from tflib.log_tools import str2time, str2num, auto_scalar, auto_image
 from tflib.evaluate_tools import draw_boxes, check_nan
 from datetime import datetime
 from trainer import Trainer
@@ -35,11 +35,11 @@ class FRCNNTrainer(Trainer):
     gtbox_num = int(gt_in.shape[0])
 
     if(not(self.isdebug)):
-      _auto_scalar(loss_value,step,"Loss")
-      _auto_scalar(self.loss.loss_detail,step)
-      _auto_scalar(gtbox_num, step, "GT_box_num_pred")
-      _auto_scalar(y_single.shape[0], step, "GT_box_num_true")
-      _auto_scalar(gtbox_num / int(y_single.shape[0]), step, "GT_box_num_pred_div_true")
+      auto_scalar(loss_value,step,"Loss")
+      auto_scalar(self.loss.loss_detail,step)
+      auto_scalar(gtbox_num, step, "GT_box_num_pred")
+      auto_scalar(y_single.shape[0], step, "GT_box_num_true")
+      auto_scalar(gtbox_num / int(y_single.shape[0]), step, "GT_box_num_pred_div_true")
       if(gtbox_num>0 and int(y_single.shape[0]*2)>gtbox_num):
         bximg = draw_boxes(x_single,bbx,'yxyx')
         if(tf.reduce_max(bximg)>1.0):

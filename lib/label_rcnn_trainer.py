@@ -1,7 +1,8 @@
 import os, sys
 import tensorflow as tf
 import numpy as np
-from tflib.log_tools import _str2time, _str2num, _auto_scalar, _auto_image
+import math
+from tflib.log_tools import str2time, str2num, auto_scalar, auto_image
 from tflib.evaluate_tools import draw_boxes, check_nan
 from tflib.bbox_transform import xywh2yxyx, gen_label_from_gt
 from tflib.img_tools import label_overlap_tf, gen_label_from_prob
@@ -30,9 +31,9 @@ class LRCNNTrainer(Trainer):
     self.opt.apply_gradients(zip(grads, self.model.trainable_variables))
 
     if(not(self.isdebug)):
-      _auto_scalar(loss_value,step,"Loss")
+      auto_scalar(loss_value,step,"Loss")
       for iname in self.loss.loss_detail:
-        _auto_scalar(self.loss.loss_detail[iname],step,"Loss detail: {}".format(iname))
+        auto_scalar(self.loss.loss_detail[iname],step,"Loss detail: {}".format(iname))
     return 0
         
   def batch_callback(self,batch_size,logger,time_usage):
@@ -44,6 +45,29 @@ class LRCNNTrainer(Trainer):
     logger.write("======================================\n\n")
     self.cur_loss = 0
     return 0
+
+  def draw_gt_by_layer(self,layer_shape,gt_box,image):
+    """
+      Args:
+        layer_shape: [h,w]
+        gt_box: (N,4 or 5) with [(label),y1,x1,y2,x2]
+    """
+    imgh,imgw = float(image.shape[-3]),float(image.shape[-2])
+    cube_h,cube_w = image.shape[-3]/layer_shape[0],image.shape[-2]/layer_shape[1]
+    feat_h,feat_w = layer_shape[0]/image.shape[-3],layer_shape[1]/image.shape[-2]
+    boxes = gt_box[:,-4:].numpy()
+    for box in boxes:
+      box_h,box_w = box[2]-box[0],box[3]-box[1]
+      x_start,x_end = math.ceil(box[1] / cube_w),math.floor(box[3] / cube_w)
+      y_start,y_end = math.ceil(box[0] / cube_h),math.floor(box[2] / cube_h)
+      sub_box_x = tf.range(x_start,x_end+1,dtype=tf.float32)*box_w
+      sub_box_y = tf.range(y_start,y_end+1,dtype=tf.float32)*box_h
+      sub_box_xs = tf.concat([box[1],sub_box_x],axis=0)
+      sub_box_xe = tf.concat([sub_box_x,box[3]],axis=0)
+      sub_box_x = tf.stack([sub_box_xs,sub_box_xe],axis=-1)
+      sub_box_ys = tf.concat([box[0],sub_box_y],axis=0)
+      sub_box_ye = tf.concat([sub_box_y,box[2]],axis=0)
+
 
   def draw_gt_pred_box(self,y_pred,gt_box,image):
     imgh = float(image.shape[-3])
@@ -93,9 +117,9 @@ class LRCNNTrainer(Trainer):
     l1op = tf.reduce_sum(label_overlap_tf(gt_box,x_single.shape[1:3],gen_label_from_prob(y_pred["l1_score"])))
     l2op = tf.reduce_sum(label_overlap_tf(gt_box,x_single.shape[1:3],gen_label_from_prob(y_pred["l2_score"])))
     l3op = tf.reduce_sum(label_overlap_tf(gt_box,x_single.shape[1:3],gen_label_from_prob(y_pred["l3_score"])))
-    _auto_scalar(l1op,step,"L1 overlap")
-    _auto_scalar(l2op,step,"L2 overlap")
-    _auto_scalar(l3op,step,"L3 overlap")
+    auto_scalar(l1op,step,"L1 overlap")
+    auto_scalar(l2op,step,"L2 overlap")
+    auto_scalar(l3op,step,"L3 overlap")
     bx_img = self.draw_gt_pred_box(y_pred,tf.stack([y_single[:,0],gt_box[:,0],gt_box[:,1],gt_box[:,2],gt_box[:,3]],axis=1), x_single)
     # gt_box = tf.stack([gt_box[:,0]/imgh,gt_box[:,1]/imgw,gt_box[:,2]/imgh,gt_box[:,3]/imgw],axis=1)
     # gt_box = tf.reshape(gt_box,[1,]+gt_box.shape[-2:])

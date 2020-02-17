@@ -353,13 +353,17 @@ def pre_box_loss(gt_box, pred_map, org_size=None, sigma=1.0):
     y_end = math.floor(y_end) if(y_end - int(y_end)) < 0.2 else math.ceil(y_end)
 
     tmp_tag = cube_h*(y_start+1) if ((y_end-1)>y_start) else box[2]
+    cube_det = tf.range((x_start+1),x_end,dtype=tf.float32)*box_w
     tmp_ys = tf.stack([
       # up boundary
       tf.math.abs(pred_map[y_start,x_start:x_end,0] - box[0]),
+      # tf.math.abs(pred_map[y_start,x_start:x_end,1] - tf.concat([box[1],cube_det],axis=0)),
       tf.math.abs(pred_map[y_start,x_start:x_end,2] - tmp_tag),
+      # tf.math.abs(pred_map[y_start,x_start:x_end,3] - tf.concat([cube_det,box[3]],axis=0)),
     ],axis=-1)
     tmp_ys = tf.where(tmp_ys > (1. / sigma_2),tmp_ys - (0.5 / sigma_2),tf.pow(tmp_ys, 2) * (sigma_2 / 2.))
     tmp_ys = tf.reduce_sum(tmp_ys,axis=-1)
+
     tmp_ye = 0.0
     if((y_end-1)>y_start):
       tmp_ye = tf.stack([
@@ -369,19 +373,24 @@ def pre_box_loss(gt_box, pred_map, org_size=None, sigma=1.0):
       ],axis=-1)
       tmp_ye = tf.where(tmp_ye > (1. / sigma_2),tmp_ye - (0.5 / sigma_2),tf.pow(tmp_ye, 2) * (sigma_2 / 2.))
       tmp_ye = tf.reduce_sum(tmp_ye,axis=-1)
+
     tmp_tag = cube_w*(x_start+1) if ((x_end-1)>x_start) else box[3]
+    cube_det = tf.range((y_start+1),y_end,dtype=tf.float32)*box_h
     tmp_xs = tf.stack([
       # down boundary
+      # tf.math.abs(pred_map[y_start:y_end,x_start,0] - tf.concat([box[0],cube_det],axis=0)),
       tf.math.abs(pred_map[y_start:y_end,x_start,1] - box[1]),
+      # tf.math.abs(pred_map[y_start:y_end,x_start,2] - tf.concat([cube_det,box[2]],axis=0)),
       tf.math.abs(pred_map[y_start:y_end,x_start,3] - tmp_tag),
     ],axis=-1)
     tmp_xs = tf.where(tmp_xs > (1. / sigma_2),tmp_xs - (0.5 / sigma_2),tf.pow(tmp_xs, 2) * (sigma_2 / 2.))
     tmp_xs = tf.reduce_sum(tmp_xs,axis=-1)
+
     tmp_xe = 0.0
     if((x_end-1)>x_start):
       tmp_xe = tf.stack([
         # down boundary
-        tf.math.abs(pred_map[y_start:y_end,(x_end-1),3] - cube_w*(x_end-1)),
+        tf.math.abs(pred_map[y_start:y_end,(x_end-1),1] - cube_w*(x_end-1)),
         tf.math.abs(pred_map[y_start:y_end,(x_end-1),3] - box[3]),
       ],axis=-1)
       tmp_xe = tf.where(tmp_xe > (1. / sigma_2),tmp_xe - (0.5 / sigma_2),tf.pow(tmp_xe, 2) * (sigma_2 / 2.))

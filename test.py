@@ -20,6 +20,7 @@ if __name__ == "__main__":
   parser.add_argument('--opt', help='Choose optimizer in sgd and adam.',default='adam')
   parser.add_argument('--debug', help='Set --debug if want to debug.', action="store_true")
   parser.add_argument('--net', help='Choose noework (frcnn/lrcnn).', default="lrcnn")
+  parser.add_argument('--name', help='Name of task.')
   parser.add_argument('--dataset', help='Choose dataset.', default="svt")
   parser.add_argument('--datax', type=int, help='Dataset output width.',default=1280)
   parser.add_argument('--datay', type=int, help='Dataset output height.',default=720)
@@ -34,15 +35,15 @@ if __name__ == "__main__":
   print("\t Step size: {},\n\t Batch size: {}.\n".format(args.step,args.batch))
   print("\t Data size: {} X {}.\n".format(args.datax,args.datay))
   print("\t Optimizer: {}.\n".format(args.opt))
+  print("\t Taks name: {}.\n".format(args.name))
 
   isdebug = args.debug
   # isdebug = True
-  learning_rate = args.learnrate
   
   if(args.opt.lower()=='sgd'):
-    optimizer = tf.keras.optimizers.SGD(learning_rate=learning_rate)
+    optimizer = tf.keras.optimizers.SGD(learning_rate=args.learnrate)
   else:
-    optimizer = tf.keras.optimizers.Adam(learning_rate=learning_rate)
+    optimizer = tf.keras.optimizers.Adam(learning_rate=args.learnrate)
 
   if(args.dataset=='svt'):
     mydatalog = SVT(out_size=[args.datax,args.datay])
@@ -53,12 +54,14 @@ if __name__ == "__main__":
 
   if(args.net=='frcnn'):
     # faster RCNN
-    trainer = FRCNNTrainer(isdebug=isdebug,task_name="FRCNN_with_{}_{}_{}".format(args.proposal,args.dataset,args.opt))
+    tkname = "{}_with_{}_{}_{}".format(args.name,args.proposal,args.dataset,args.opt) if(args.name!=None) else "FRCNN_with_{}_{}_{}".format(args.proposal,args.dataset,args.opt)
+    trainer = FRCNNTrainer(isdebug=isdebug,task_name=tkname)
     model = Faster_RCNN(num_classes=2,bx_choose=args.proposal)
     loss = RCNNLoss(cfg=cfg,cfg_name="TRAIN",gtformat=gtformat)
   else:
     # label RCNN
-    trainer = LRCNNTrainer(isdebug=isdebug,task_name="LRCNN_with_{}_{}".format(args.dataset,args.opt),gtformat=gtformat)
+    tkname = "{}_with_{}_{}".format(args.name,args.dataset,args.opt) if(args.name!=None) else "LRCNN_with_{}_{}".format(args.dataset,args.opt)
+    trainer = LRCNNTrainer(isdebug=isdebug,task_name=tkname,gtformat=gtformat)
     model = Label_RCNN(num_classes=2)
     loss = LRCNNLoss(imge_size=[args.datay,args.datax],gtformat=gtformat)
   
@@ -83,17 +86,17 @@ if __name__ == "__main__":
     islog=False
     for i in range(args.batch):
       x_train, y_train = mydatalog.read_train_batch(args.step)
-      x_val, y_val = mydatalog.read_test_batch(2)
-      if(islog==False):
-        imgs = draw_boxes(x_train,y_train)
-        # imgs = tf.split(imgs,imgs.shape[0],axis=0)
-        # for i in range(len(imgs)):
-        #   save_image(imgs[i],'/home/yomcoding/TensorFlow/FasterRCNN/log/x_train_demo_{}.jpg'.format(i))
-        trainer.log_image(imgs,10,name="{} training data examples.".format(imgs.shape[0]))
-        islog=True
+      # x_val, y_val = mydatalog.read_test_batch(2)
+      x_val, y_val = x_train[0:3], y_train[0:3]
+      # if(islog==False):
+      #   imgs = draw_boxes(x_train,y_train)
+      #   # imgs = tf.split(imgs,imgs.shape[0],axis=0)
+      #   # for i in range(len(imgs)):
+      #   #   save_image(imgs[i],'/home/yomcoding/TensorFlow/FasterRCNN/log/x_train_demo_{}.jpg'.format(i))
+      #   trainer.log_image(imgs,10,name="{} training data examples.".format(imgs.shape[0]))
+      #   islog=True
         
-      x_train = x_train / 256.0
-      # x_val = x_val / 256.0
+      x_train = x_train
       trainer.fit(x_train,y_train,model,loss,optimizer)
       if(i<11):
         trainer.evaluate(x_val,y_val)

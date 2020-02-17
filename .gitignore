@@ -15,3 +15,5 @@ dataset.lnk
 .vscode
 lab.py
 run.sh
+*.jpg
+*.png

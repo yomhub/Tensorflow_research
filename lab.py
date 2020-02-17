@@ -5,16 +5,20 @@ import argparse
 # from mydataset.ctw import CTW
 from mydataset.svt import SVT
 from lib.model.config import cfg
-from lib.model.label_rcnn import Label_RCNN, LRCNNLoss
+# from lib.model.label_rcnn import Label_RCNN, LRCNNLoss
 from lib.frcnn_trainer import FRCNNTrainer
 from lib.tflib.bbox_transform import *
+from lib.tflib.evaluate_tools import *
+from lib.tflib.log_tools import auto_image,save_image
 # 
 
 if __name__ == "__main__":
-  mydatalog = SVT(out_size=[1021,1025])
+  mydatalog = SVT(out_size=[1280,720])
   x_train, y_train = mydatalog.read_train_batch(1)
   y_train = xywh2yxyx(y_train[0])
-  tt2 = gen_label_with_width_from_gt((33,32),y_train,[1025,1021])
+  # tt2 = gen_label_with_width_from_gt((33,32),y_train,[1025,1021])
+  img = draw_grid_in_gt([43,78],y_train,x_train[0])
+  save_image(img,"test.jpg")
   # loss = LRCNNLoss((1025,1021),gtformat='xywh')
   # tfz = tf.zeros((1,1025,1021,3))
   # model = Label_RCNN()

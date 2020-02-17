@@ -1,7 +1,7 @@
 import os, sys
 import tensorflow as tf
 import numpy as np
-from tflib.log_tools import _str2time, _str2num, _auto_scalar, _auto_image
+from tflib.log_tools import str2time, str2num, auto_scalar, auto_image
 from tflib.evaluate_tools import draw_boxes
 from datetime import datetime
 
@@ -196,7 +196,7 @@ class Trainer():
       if(not(os.path.exists(self.model_path))):
         return None
       for tardir in os.listdir(self.model_path):
-        cur_time = _str2time(tardir)
+        cur_time = str2time(tardir)
         if(last_time==None or cur_time>last_time):
           last_time = cur_time
       if(last_time==None):
@@ -211,7 +211,7 @@ class Trainer():
 
     try:
       txtlog = open(os.path.join(loddir,'log.txt'),'r',encoding='utf8')
-      self.current_step,self.batch,self.data_count = _str2num(txtlog.readline())
+      self.current_step,self.batch,self.data_count = str2num(txtlog.readline())
       txtlog.close()
     except Exception as e:
       print(str(e))
