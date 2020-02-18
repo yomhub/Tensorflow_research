@@ -127,12 +127,13 @@ class Trainer():
     tstart = datetime.now()
     total_data = x_train.shape[0]
     cur_stp = self.current_step
-
+    x_train = tf.split(x_train,x_train.shape[0],axis=0)
     logger = open(os.path.join(self.logs_path,'result.txt'),'a+',encoding='utf8')
     if(not(self.isdebug)):
       logger.write(datetime.now().strftime("%Y%m%d-%H%M%S")+'\n')
-    if(type(y_train)==list):
-      assert(total_data==len(y_train))
+    if(type(y_train)!=list):
+      y_train = [y_train]
+    assert(total_data==len(y_train))
 
     if(model!=None):
       self.model = model
@@ -160,9 +161,8 @@ class Trainer():
     try:
       type(model.trainable_variables)
     except:
-      model(tf.zeros([1,]+x_train.shape[1:],dtype=tf.float32))
+      model(tf.zeros([1,]+x_train[0].shape[1:],dtype=tf.float32))
 
-    x_train = tf.split(x_train,total_data,axis=0)
     for step in range(total_data):
       if(x_train[step].dtype!=tf.float32 or x_train[step].dtype!=tf.float64):
         x_train[step] = tf.cast(x_train[step],tf.float32)

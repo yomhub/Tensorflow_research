@@ -200,13 +200,13 @@ class Label_RCNN(tf.keras.Model):
     l2_bbox = self.rpn_L2_bbox_pred(l2_feat)
     l3_bbox = self.rpn_L3_bbox_pred(l3_feat)
 
-    l1_bbox = tf.clip_by_value(l1_bbox,self.neg_rect,self.pst_rect)*self.rpn_L1_rec_fild
-    l2_bbox = tf.clip_by_value(l2_bbox,self.neg_rect,self.pst_rect)*self.rpn_L2_rec_fild
-    l3_bbox = tf.clip_by_value(l3_bbox,self.neg_rect,self.pst_rect)*self.rpn_L3_rec_fild
+    l1_bbox = tf.clip_by_value(l1_bbox,self.neg_rect,self.pst_rect)
+    l2_bbox = tf.clip_by_value(l2_bbox,self.neg_rect,self.pst_rect)
+    l3_bbox = tf.clip_by_value(l3_bbox,self.neg_rect,self.pst_rect)
 
-    l1_bbox += self.rpn_l1_det
-    l2_bbox += self.rpn_l2_det
-    l3_bbox += self.rpn_l3_det
+    l1_bbox_cod = l1_bbox * self.rpn_L1_rec_fild + self.rpn_l1_det
+    l2_bbox_cod = l2_bbox * self.rpn_L2_rec_fild + self.rpn_l2_det
+    l3_bbox_cod = l3_bbox * self.rpn_L3_rec_fild + self.rpn_l3_det
     
     # l1_ort = tf.nn.softmax(self.rpn_L1_window(l1_feat),axis=-1)
     # l2_ort = tf.nn.softmax(self.rpn_L2_window(l2_feat),axis=-1)
@@ -215,20 +215,23 @@ class Label_RCNN(tf.keras.Model):
     # 
     self.y_pred = {
       "l1_score" : l1_score,
-      "l1_bbox" : l1_bbox,
+      "l1_bbox" : l1_bbox_cod,
+      "l1_bbox_det" : l1_bbox,
       # "l1_ort" : l1_ort,
       "l2_score" : l2_score,
-      "l2_bbox" : l2_bbox,
+      "l2_bbox" : l2_bbox_cod,
+      "l2_bbox_det" : l2_bbox,
       # "l2_ort" : l2_ort,
       "l3_score" : l3_score,
-      "l3_bbox" : l3_bbox,
+      "l3_bbox" : l3_bbox_cod,
+      "l3_bbox_det" : l3_bbox,
       # "l3_ort" : l3_ort,
     }
     # return l1_score,l1_bbox,l1_ort,l2_score,l2_bbox,l2_ort,l3_score,l3_bbox,l3_ort
     return self.y_pred
 
 class LRCNNLoss(tf.keras.losses.Loss):
-  def __init__(self,imge_size,gtformat='yxyx'):
+  def __init__(self,imge_size,gtformat='yxyx',use_cross=True):
     super(LRCNNLoss, self).__init__()
     gtformat = gtformat.lower()
     if(gtformat.lower()=='yxyx' or gtformat.lower()=='yx'):
@@ -236,6 +239,7 @@ class LRCNNLoss(tf.keras.losses.Loss):
     else:
       self.gtformat='xywh'
     self.imge_size = imge_size
+    self.use_cross = use_cross
 
   def _label_loss(self,pred_score,y_true):
     losstype='softmax'
@@ -267,7 +271,8 @@ class LRCNNLoss(tf.keras.losses.Loss):
     return tf.reduce_mean(loss)
     
   def _boxes_loss(self,box_prd,y_true):
-    loss_value = pre_box_loss(y_true,box_prd,self.imge_size)
+    # loss_value = pre_box_loss(y_true,box_prd,self.imge_size)
+    loss_value = pre_box_loss_by_det(y_true,box_prd,self.imge_size,use_cross=self.use_cross)
     # loss_value = loss_value / tf.math.reduce_sum((y_true[:,2]-y_true[:,0])*(y_true[:,3]-y_true[:,1]))
     return tf.math.reduce_mean(loss_value)
 
@@ -289,7 +294,7 @@ class LRCNNLoss(tf.keras.losses.Loss):
     #   l3_box_loss = self._boxes_loss(y_pred["l3_bbox"],l3_y[:,-4:])
     # else:
     #   l3_box_loss = 0.0
-    l3_box_loss = self._boxes_loss(y_pred["l3_bbox"],y_true[:,-4:])
+    l3_box_loss = self._boxes_loss(y_pred["l3_bbox_det"],y_true[:,-4:])
     l3_label_loss = self._label_loss(y_pred["l3_score"],y_true)
 
     # l2_y = tf.gather(y_true,tf.reshape(tf.where(tf.logical_and(gt_area>=16.0*16.0,gt_area<32.0*32.0)),[-1]))
@@ -297,7 +302,7 @@ class LRCNNLoss(tf.keras.losses.Loss):
     #   l2_box_loss = self._boxes_loss(y_pred["l2_bbox"],l2_y[:,-4:])
     # else:
     #   l2_box_loss = 0.0
-    l2_box_loss = self._boxes_loss(y_pred["l2_bbox"],y_true[:,-4:])
+    l2_box_loss = self._boxes_loss(y_pred["l2_bbox_det"],y_true[:,-4:])
     l2_label_loss = self._label_loss(y_pred["l2_score"],y_true)
 
     # l1_y = tf.gather(y_true,tf.reshape(tf.where(gt_area<16.0*16.0),[-1]))
@@ -305,7 +310,7 @@ class LRCNNLoss(tf.keras.losses.Loss):
     #   l1_box_loss = self._boxes_loss(y_pred["l1_bbox"],l1_y[:,-4:])
     # else:
     #   l1_box_loss = 0.0
-    l1_box_loss = self._boxes_loss(y_pred["l1_bbox"],y_true[:,-4:])
+    l1_box_loss = self._boxes_loss(y_pred["l1_bbox_det"],y_true[:,-4:])
     l1_label_loss = self._label_loss(y_pred["l1_score"],y_true)
 
     self.loss_detail={
@@ -317,4 +322,6 @@ class LRCNNLoss(tf.keras.losses.Loss):
       "l3_box_loss" : l3_box_loss,
     }
 
-    return l1_label_loss + l2_label_loss + l3_label_loss + l1_box_loss + l2_box_loss + l3_box_loss
+    # return l1_label_loss + l2_label_loss + l3_label_loss + l1_box_loss + l2_box_loss + l3_box_loss
+    # return l1_box_loss + l2_box_loss + l3_box_loss
+    return l3_box_loss

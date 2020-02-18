@@ -72,7 +72,7 @@ def draw_grid_in_gt(layer_shape,gt_box,image):
     sub_box_xs,sub_box_ys = tf.meshgrid(sub_box_xs,sub_box_ys)
     sub_box_xe,sub_box_ye = tf.meshgrid(sub_box_xe,sub_box_ye)
     sub_box = tf.stack([sub_box_ys/imgh,sub_box_xs/imgw,sub_box_ye/imgh,sub_box_xe/imgw],axis=-1)
-    ret = tf.image.draw_bounding_boxes(ret,tf.reshape(sub_box,[1,-1,4]),tf.convert_to_tensor([[254.0,244.0,234.0]]))
+    ret = tf.image.draw_bounding_boxes(ret,tf.reshape(sub_box,[1,-1,4]),tf.convert_to_tensor([[36.0,128.0,128.0]]))
   return ret 
 
 

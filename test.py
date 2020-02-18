@@ -26,6 +26,7 @@ if __name__ == "__main__":
   parser.add_argument('--datay', type=int, help='Dataset output height.',default=720)
   parser.add_argument('--step', type=int, help='Step size.',default=10)
   parser.add_argument('--batch', type=int, help='Batch size.',default=20)
+  parser.add_argument('--cross', help='Set --cross if want to cross box loss.', action="store_true")
   # parser.add_argument('--savestep', type=int, help='Batch size.',default=20)
   parser.add_argument('--learnrate', type=float, help='Learning rate.',default=0.001)
   args = parser.parse_args()
@@ -36,6 +37,7 @@ if __name__ == "__main__":
   print("\t Data size: {} X {}.\n".format(args.datax,args.datay))
   print("\t Optimizer: {}.\n".format(args.opt))
   print("\t Taks name: {}.\n".format(args.name))
+  print("\t Use cross: {}.\n".format(args.cross))
 
   isdebug = args.debug
   # isdebug = True
@@ -100,7 +102,7 @@ if __name__ == "__main__":
       trainer.fit(x_train,y_train,model,loss,optimizer)
       if(i<11):
         trainer.evaluate(x_val,y_val)
-        trainer.evaluate(x_train[0:2],y_val[0:2])
+        # trainer.evaluate(x_train[0:2],y_val[0:2])
       # if(i%10==0):
       #   trainer.set_trainer(data_count=mydatalog._init_conter)
       #   trainer.save()

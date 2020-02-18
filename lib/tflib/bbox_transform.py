@@ -162,21 +162,27 @@ def gen_label_from_gt(layer_shape,gt_box,img_shape=None,bg_label=-1):
       and bg is -1
   """
   if(img_shape!=None):
-    fact_x = layer_shape[1]/img_shape[1]
-    fact_y = layer_shape[0]/img_shape[0]
+    cube_h,cube_w = img_shape[0]/layer_shape[0],img_shape[1]/layer_shape[1]
   else:
-    fact_x = layer_shape[1]
-    fact_y = layer_shape[0]
+    cube_h,cube_w = 1,1
+
   gtlabel = gt_box[:,0].numpy()
   gtlabel = gtlabel.astype(np.int32)
-  bbox = tf.stack([gt_box[:,1]*fact_y,gt_box[:,2]*fact_x,gt_box[:,3]*fact_y,gt_box[:,4]*fact_x],axis=1).numpy()
+  bbox = gt_box[:,1:]
   label_np = np.full(layer_shape,bg_label,np.int32)
   for i in range(gtlabel.shape[0]):
-    x1 = max(math.floor(bbox[i,1]),0)
-    y1 = max(math.floor(bbox[i,0]),0)
-    y2 = min(math.ceil(bbox[i,2]),layer_shape[0])
-    x2 = min(math.ceil(bbox[i,3]),layer_shape[1])
-    label_np[y1:y2,x1:x2]=gtlabel[i]
+    x_start,x_end = bbox[i,1] / cube_w,bbox[i,3] / cube_w
+    y_start,y_end = bbox[i,0] / cube_h,bbox[i,2] / cube_h
+    x_start = math.floor(x_start) if(x_start - int(x_start)) < 0.7 else math.ceil(x_start)
+    y_start = math.floor(y_start) if(y_start - int(y_start)) < 0.7 else math.ceil(y_start)
+    x_end = math.floor(x_end) if(x_end - int(x_end)) < 0.2 else math.ceil(x_end)
+    y_end = math.floor(y_end) if(y_end - int(y_end)) < 0.2 else math.ceil(y_end)
+    x_start = max(x_start,0)
+    y_start = max(y_start,0)
+    y_end = min(y_end,layer_shape[0])
+    x_end = min(x_end,layer_shape[1])
+    label_np[y_start:y_end,x_start:x_end]=gtlabel[i]
+    
   return tf.convert_to_tensor(label_np,dtype=tf.int32)
 
 def gen_label_with_width_from_gt(layer_shape,gt_box,img_shape=None,bg_label=-1):
@@ -323,7 +329,8 @@ def pre_box_loss(gt_box, pred_map, org_size=None, sigma=1.0):
     Args:
       gt_box: tensor (total_gts,4) with [y1, x1, y2, x2]
         in original coordinate.
-      pred_map: predict layer tensor (h,w,4) with [y1, x1, y2, x2]
+      pred_map: coordinate in prediction layer 
+        tensor ((1),h,w,4) with [y1, x1, y2, x2]
       org_size: original image size (h,w)
     Return:
       loss value
@@ -347,8 +354,8 @@ def pre_box_loss(gt_box, pred_map, org_size=None, sigma=1.0):
     # x_start,x_end = math.floor(box[1]*feat_w),min(math.ceil(box[3]*feat_w),pred_map.shape[-2]-1)
     x_start,x_end = box[1] / cube_w,box[3] / cube_w
     y_start,y_end = box[0] / cube_h,box[2] / cube_h
-    x_start = math.floor(x_start) if(x_start - int(x_start)) < 0.8 else math.ceil(x_start)
-    y_start = math.floor(y_start) if(y_start - int(y_start)) < 0.8 else math.ceil(y_start)
+    x_start = math.floor(x_start) if(x_start - int(x_start)) < 0.7 else math.ceil(x_start)
+    y_start = math.floor(y_start) if(y_start - int(y_start)) < 0.7 else math.ceil(y_start)
     x_end = math.floor(x_end) if(x_end - int(x_end)) < 0.2 else math.ceil(x_end)
     y_end = math.floor(y_end) if(y_end - int(y_end)) < 0.2 else math.ceil(y_end)
 
@@ -443,3 +450,111 @@ def pre_box_loss(gt_box, pred_map, org_size=None, sigma=1.0):
     abs_inside_det+=[tmp_in_det]
   return tf.convert_to_tensor(abs_boundary_det)
 
+
+def pre_box_loss_by_det(gt_box, det_map, org_size=None, sigma=1.0, use_cross=True):
+  """
+    Args:
+      gt_box: tensor (total_gts,4) with [y1, x1, y2, x2]
+        in original coordinate.
+      det_map: deta in prediction layer 
+        tensor ((1),h,w,4) with [dy1, dx1, dy2, dx2]
+      org_size: original image size (h,w)
+    Return:
+      loss value
+  """
+  pred_map = tf.reshape(det_map,det_map.shape[-3:])
+  sigma_2 = sigma**2
+  if(org_size==None):
+    cube_h,cube_w = 1,1
+  else:
+    cube_h,cube_w = org_size[0]/pred_map.shape[-3],org_size[1]/pred_map.shape[-2]
+  
+  abs_boundary_det = []
+  for box in gt_box:
+    f_x_start,f_x_end = box[1] / cube_w,box[3] / cube_w
+    f_y_start,f_y_end = box[0] / cube_h,box[2] / cube_h
+    x_start = math.floor(f_x_start) if(f_x_start - int(f_x_start)) < 0.8 else math.ceil(f_x_start)
+    y_start = math.floor(f_y_start) if(f_y_start - int(f_y_start)) < 0.8 else math.ceil(f_y_start)
+    x_end = math.floor(f_x_end) if(f_x_end - int(f_x_end)) < 0.2 else math.ceil(f_x_end)
+    y_end = math.floor(f_y_end) if(f_y_end - int(f_y_end)) < 0.2 else math.ceil(f_y_end)
+
+    tmp_tag = 0.0 if ((y_end-1)>y_start) else f_y_end - y_end
+    tmp_ys = tf.stack([
+      # up boundary
+      tf.math.abs(f_y_start - float(y_start) - pred_map[y_start,x_start:x_end,0]),
+      tf.math.abs(pred_map[y_start,x_start:x_end,2] - tmp_tag),
+      ],axis=-1)
+    # tmp_ys = tf.where(tmp_ys > (1. / sigma_2),tmp_ys - (0.5 / sigma_2),tf.pow(tmp_ys, 2) * (sigma_2 / 2.))
+    tmp_ys = tf.reduce_sum(tmp_ys,axis=-1)
+
+    tmp_ysc = 0.0
+    if(use_cross and x_end-x_start>3):
+      tmp_ysc = tf.stack([
+        tf.math.abs(pred_map[y_start,(x_start+1):(x_end-1),1]),
+        tf.math.abs(pred_map[y_start,(x_start+1):(x_end-1),3]),
+        ],axis=-1)
+      # tmp_ysc = tf.where(tmp_ysc > (1. / sigma_2),tmp_ysc - (0.5 / sigma_2),tf.pow(tmp_ysc, 2) * (sigma_2 / 2.))
+      tmp_ysc = tf.reduce_sum(tmp_ysc,axis=-1)
+
+    tmp_ye = 0.0
+    tmp_yec = 0.0
+    if((y_end-1)>y_start):
+      tmp_ye = tf.stack([
+        # down boundary
+        tf.math.abs(pred_map[(y_end-1),x_start:x_end,0]),
+        tf.math.abs(f_y_end - float(y_end) - pred_map[(y_end-1),x_start:x_end,2]),
+        ],axis=-1)
+      # tmp_ye = tf.where(tmp_ye > (1. / sigma_2),tmp_ye - (0.5 / sigma_2),tf.pow(tmp_ye, 2) * (sigma_2 / 2.))
+      tmp_ye = tf.reduce_sum(tmp_ye,axis=-1)
+
+      if(use_cross and x_end-x_start>3):
+        tmp_yec = tf.stack([
+          tf.math.abs(pred_map[(y_end-1),(x_start+1):(x_end-1),1]),
+          tf.math.abs(pred_map[(y_end-1),(x_start+1):(x_end-1),3]),
+          ],axis=-1)
+        # tmp_yec = tf.where(tmp_yec > (1. / sigma_2),tmp_yec - (0.5 / sigma_2),tf.pow(tmp_yec, 2) * (sigma_2 / 2.))
+        tmp_yec = tf.reduce_sum(tmp_yec,axis=-1)
+    
+    tmp_tag = 0.0 if ((x_end-1)>x_start) else f_x_end - x_end
+    tmp_xs = tf.stack([
+      # down boundary
+      tf.math.abs(f_x_start - float(x_start) - pred_map[y_start:y_end,x_start,1]),
+      tf.math.abs(pred_map[y_start:y_end,x_start,3] - tmp_tag),
+      ],axis=-1)
+    # tmp_xs = tf.where(tmp_xs > (1. / sigma_2),tmp_xs - (0.5 / sigma_2),tf.pow(tmp_xs, 2) * (sigma_2 / 2.))
+    tmp_xs = tf.reduce_sum(tmp_xs,axis=-1)
+
+    tmp_xsc = 0.0
+    if(use_cross and y_end-y_start>3):
+      tmp_xsc = tf.stack([
+        tf.math.abs(pred_map[(y_start+1):(y_end-1),x_start,0]),
+        tf.math.abs(pred_map[(y_start+1):(y_end-1),x_start,2]),
+        ],axis=-1)
+      # tmp_xsc = tf.where(tmp_xsc > (1. / sigma_2),tmp_xsc - (0.5 / sigma_2),tf.pow(tmp_xsc, 2) * (sigma_2 / 2.))
+      tmp_xsc = tf.reduce_sum(tmp_xsc,axis=-1)
+
+    tmp_xe = 0.0
+    tmp_xec = 0.0
+    if((x_end-1)>x_start):
+      tmp_xe = tf.stack([
+        # down boundary
+        tf.math.abs(pred_map[y_start:y_end,(x_end-1),1]),
+        tf.math.abs(f_x_end - float(x_end) - pred_map[y_start:y_end,(x_end-1),3]),
+        ],axis=-1)
+      # tmp_xe = tf.where(tmp_xe > (1. / sigma_2),tmp_xe - (0.5 / sigma_2),tf.pow(tmp_xe, 2) * (sigma_2 / 2.))
+      tmp_xe = tf.reduce_sum(tmp_xe,axis=-1)
+
+      if(use_cross and y_end-y_start>3):
+        tmp_xec = tf.stack([
+          tf.math.abs(pred_map[(y_start+1):(y_end-1),(x_end-1),0]),
+          tf.math.abs(pred_map[(y_start+1):(y_end-1),(x_end-1),2]),
+          ],axis=-1)
+        # tmp_xec = tf.where(tmp_xec > (1. / sigma_2),tmp_xec - (0.5 / sigma_2),tf.pow(tmp_xec, 2) * (sigma_2 / 2.))
+        tmp_xec = tf.reduce_sum(tmp_xec,axis=-1)
+
+    tmp_det = tf.math.reduce_mean(tmp_ys)+tf.math.reduce_mean(tmp_ye)+tf.math.reduce_mean(tmp_xs)+tf.math.reduce_mean(tmp_xe)
+    if(use_cross):
+      tmp_det += tf.math.reduce_mean(tmp_ysc)+tf.math.reduce_mean(tmp_yec)+tf.math.reduce_mean(tmp_xsc)+tf.math.reduce_mean(tmp_xec)
+    abs_boundary_det+=[tmp_det]
+
+  return tf.convert_to_tensor(abs_boundary_det)
