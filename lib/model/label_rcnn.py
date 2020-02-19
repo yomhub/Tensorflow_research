@@ -15,27 +15,23 @@ from tflib.common import *
 
 
 class Label_RCNN(tf.keras.Model):
+  """
+    Args:
+      direction: int of predict box relation in 8 or 4 direction
+  """
   def __init__(self,
     num_classes=2,
     feature_layer_name='vgg16',
-    bx_ths=0.7,
     direction=8,
-    max_outputs_num=2000,
-    neg_rect=1.0,
-    pst_rect=1.0,
     ):
     super(Label_RCNN, self).__init__()
-
+    
     if(feature_layer_name.lower()=='resnet'):
       self.feature_layer_name='resnet'
     else:
       self.feature_layer_name='vgg16'
-      # final chs is 512
     self.num_classes = int(num_classes)
-    self.bx_ths = bx_ths
-    self.direction = direction
-    self.neg_rect = float(-neg_rect)
-    self.pst_rect = float(pst_rect)
+    self.direction = 4 if direction==4 else 8
 
   def build(self,input_shape):
     imgh = input_shape[-3]
@@ -110,7 +106,7 @@ class Label_RCNN(tf.keras.Model):
                             activation=None,
                             name="rpn_L1_bbox_pred",
                             # kernel_initializer=unf_pn1,
-                            )     
+                            )
     cube_h,cube_w = self.feature_model.output[0].shape[-3],self.feature_model.output[0].shape[-2]
     self.rpn_l1_det = feat_layer_cod_gen([imgh,imgw],[cube_h,cube_w],self.num_classes-1)
 
@@ -163,10 +159,11 @@ class Label_RCNN(tf.keras.Model):
                             )
     self.rpn_L3_bbox_pred = tf.keras.layers.Conv2D(filters=(self.num_classes-1)*4,
                             kernel_size=(1, 1),
+                            # padding='valid', 
                             padding='same', 
                             activation=None,
                             name="rpn_L3_bbox_pred",
-                            )     
+                            )
     cube_h,cube_w = self.feature_model.output[2].shape[-3],self.feature_model.output[2].shape[-2]
     self.rpn_l3_det = feat_layer_cod_gen([imgh,imgw],[cube_h,cube_w],self.num_classes-1)                          
     # self.rpn_L3_window = tf.keras.models.Sequential(
@@ -200,10 +197,6 @@ class Label_RCNN(tf.keras.Model):
     l2_bbox = self.rpn_L2_bbox_pred(l2_feat)
     l3_bbox = self.rpn_L3_bbox_pred(l3_feat)
 
-    l1_bbox = tf.clip_by_value(l1_bbox,self.neg_rect,self.pst_rect)
-    l2_bbox = tf.clip_by_value(l2_bbox,self.neg_rect,self.pst_rect)
-    l3_bbox = tf.clip_by_value(l3_bbox,self.neg_rect,self.pst_rect)
-
     l1_bbox_cod = l1_bbox * self.rpn_L1_rec_fild + self.rpn_l1_det
     l2_bbox_cod = l2_bbox * self.rpn_L2_rec_fild + self.rpn_l2_det
     l3_bbox_cod = l3_bbox * self.rpn_L3_rec_fild + self.rpn_l3_det
@@ -212,7 +205,6 @@ class Label_RCNN(tf.keras.Model):
     # l2_ort = tf.nn.softmax(self.rpn_L2_window(l2_feat),axis=-1)
     # l3_ort = tf.nn.softmax(self.rpn_L3_window(l3_feat),axis=-1)
 
-    # 
     self.y_pred = {
       "l1_score" : l1_score,
       "l1_bbox" : l1_bbox_cod,
@@ -322,6 +314,4 @@ class LRCNNLoss(tf.keras.losses.Loss):
       "l3_box_loss" : l3_box_loss,
     }
 
-    # return l1_label_loss + l2_label_loss + l3_label_loss + l1_box_loss + l2_box_loss + l3_box_loss
-    # return l1_box_loss + l2_box_loss + l3_box_loss
-    return l3_box_loss
+    return l1_label_loss + l2_label_loss + l3_label_loss + l1_box_loss + l2_box_loss + l3_box_loss

@@ -98,11 +98,13 @@ if __name__ == "__main__":
       #   trainer.log_image(imgs,10,name="{} training data examples.".format(imgs.shape[0]))
       #   islog=True
         
-      x_train = x_train
       trainer.fit(x_train,y_train,model,loss,optimizer)
       if(i<11):
         trainer.evaluate(x_val,y_val)
         # trainer.evaluate(x_train[0:2],y_val[0:2])
+      if(i==int(args.batch/2)):
+        optimizer = tf.keras.optimizers.SGD(learning_rate=args.learnrate)
+        trainer.set_trainer(opt=optimizer)
       # if(i%10==0):
       #   trainer.set_trainer(data_count=mydatalog._init_conter)
       #   trainer.save()

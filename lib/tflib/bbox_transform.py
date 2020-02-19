@@ -16,7 +16,7 @@ def bbox_transform(ex_rois, gt_rois):
   Return:
     difference of bounding-box 
     with shape (N,4)
-    where 4 is [dx,dy,dw,dh]
+    where 4 is [dx,dy,log(dw/w),log(dh/h)]
   """
   assert ex_rois.shape[0] == gt_rois.shape[0]
 
@@ -43,29 +43,32 @@ def bbox_transform(ex_rois, gt_rois):
 @tf.function
 def bbox_transform_inv_tf(boxes, deltas, order='xyxy'):
   """
+    Apply deltas to anchors, 
+      x+=dx*widths,y+=dy*heights
+      w+=exp(dw),h+=exp(dh)
     Args:
-      boxes: boxes (N,4) 
-      with order 'xyxy' [x1,y1,x2,y2]
-      or order 'yxyx' [y1,x1,y2,x2]
-      deltas: deltas value (N,4)
-      
+      boxes: boxes (N,[y1,x1,y2,x2]) in 'yxyx'
+                or (N,[x1,y1,x2,y2]) in 'xyxy'
+      deltas: deltas value (N,[dy,dx,dh,dw]) in 'yxyx'
+                        or (N,[dx,dy,dw,dh]) in 'xyxy'
+    Returns:
+      Rectified box (N,[x1,y1,x2,y2]) in 'xyxy'
+                or  (N,[y1,x1,y2,x2]) in 'yxyx'
   """
+  order=order.lower()
   boxes = tf.cast(boxes, deltas.dtype)
-  # if(order=='xyxy'):
-  widths = tf.subtract(boxes[:, 2], boxes[:, 0]) + 1.0
-  heights = tf.subtract(boxes[:, 3], boxes[:, 1]) + 1.0
-  ctr_x = tf.add(boxes[:, 0], widths * 0.5)
-  ctr_y = tf.add(boxes[:, 1], heights * 0.5)
-  # else:
-  #   heights = tf.subtract(boxes[:, 2], boxes[:, 0]) + 1.0
-  #   widths = tf.subtract(boxes[:, 3], boxes[:, 1]) + 1.0
-  #   ctr_y = tf.add(boxes[:, 0], widths * 0.5)
-  #   ctr_x = tf.add(boxes[:, 1], heights * 0.5)
+  x_start = 1 if order=='yxyx' else 0
+  y_start = 0 if order=='yxyx' else 1
 
-  dx = deltas[:, 0]
-  dy = deltas[:, 1]
-  dw = deltas[:, 2]
-  dh = deltas[:, 3]
+  widths = tf.subtract(boxes[:, x_start+2], boxes[:, x_start]) + 1.0
+  heights = tf.subtract(boxes[:, y_start+2], boxes[:, y_start]) + 1.0
+  ctr_x = tf.add(boxes[:, x_start], widths * 0.5)
+  ctr_y = tf.add(boxes[:, y_start], heights * 0.5)
+
+  dx = deltas[:, x_start]
+  dy = deltas[:, y_start]
+  dw = deltas[:, x_start+2]
+  dh = deltas[:, y_start+2]
 
   pred_ctr_x = tf.add(tf.multiply(dx, widths), ctr_x)
   pred_ctr_y = tf.add(tf.multiply(dy, heights), ctr_y)
@@ -84,14 +87,29 @@ def bbox_transform_inv_tf(boxes, deltas, order='xyxy'):
   # # if(maxy!=None):
   # pred_boxes1 = tf.clip_by_value(pred_boxes1, 0, im_info[0] - 1)
   # pred_boxes3 = tf.clip_by_value(pred_boxes3, 0, im_info[0] - 1)
-
-  return tf.stack([pred_boxes1, pred_boxes0, pred_boxes3, pred_boxes2], axis=1)
+  if(order=='yxyx'):
+    return tf.stack([pred_boxes1, pred_boxes0, pred_boxes3, pred_boxes2], axis=1)
+  return tf.stack([pred_boxes0, pred_boxes1, pred_boxes2, pred_boxes3], axis=1)
 
 # @tf.function
-def clip_boxes_tf(boxes, im_info):
+def clip_boxes_tf(boxes, im_info, order='xyxy'):
+  """
+    Clip box into image.
+    Args:
+      boxes: boxes (N,[y1,x1,y2,x2]) in 'yxyx'
+                or (N,[x1,y1,x2,y2]) in 'xyxy'
+      im_info: [h,w]
+    Return: Cliped boxes (N,[y1,x1,y2,x2])
+  """
   # boxes=[y1,x1,y2,x2] im_info=[y,x] out=[y1,x1,y2,x2]
-  b02 = tf.clip_by_value(boxes[:, 0:3:2], clip_value_min=0, clip_value_max=im_info[0] - 1)
-  b13 = tf.clip_by_value(boxes[:, 1:4:2], clip_value_min=0, clip_value_max=im_info[1] - 1)
+  order=order.lower()
+  x_start = 1 if order=='yxyx' else 0
+  y_start = 0 if order=='yxyx' else 1
+  # y
+  b02 = tf.clip_by_value(boxes[:, y_start::2], clip_value_min=0, clip_value_max=im_info[0] - 1)
+  # x
+  b13 = tf.clip_by_value(boxes[:, x_start::2], clip_value_min=0, clip_value_max=im_info[1] - 1)
+  
   return tf.stack([b02[:,0], b13[:,0], b02[:,1], b13[:,1]], axis=1)
 
 @tf.function
@@ -463,12 +481,13 @@ def pre_box_loss_by_det(gt_box, det_map, org_size=None, sigma=1.0, use_cross=Tru
       loss value
   """
   pred_map = tf.reshape(det_map,det_map.shape[-3:])
+  use_cross=False
   sigma_2 = sigma**2
   if(org_size==None):
     cube_h,cube_w = 1,1
   else:
     cube_h,cube_w = org_size[0]/pred_map.shape[-3],org_size[1]/pred_map.shape[-2]
-  
+  f_smooth = tf.keras.layers.Lambda(lambda x: tf.where(x > (1. / x),x - (0.5 / sigma_2),tf.pow(x, 2) * (sigma_2 / 2.)))
   abs_boundary_det = []
   for box in gt_box:
     f_x_start,f_x_end = box[1] / cube_w,box[3] / cube_w
@@ -477,84 +496,52 @@ def pre_box_loss_by_det(gt_box, det_map, org_size=None, sigma=1.0, use_cross=Tru
     y_start = math.floor(f_y_start) if(f_y_start - int(f_y_start)) < 0.8 else math.ceil(f_y_start)
     x_end = math.floor(f_x_end) if(f_x_end - int(f_x_end)) < 0.2 else math.ceil(f_x_end)
     y_end = math.floor(f_y_end) if(f_y_end - int(f_y_end)) < 0.2 else math.ceil(f_y_end)
-
+    
+    tmp_det_sum = 0.0
     tmp_tag = 0.0 if ((y_end-1)>y_start) else f_y_end - y_end
-    tmp_ys = tf.stack([
-      # up boundary
-      tf.math.abs(f_y_start - float(y_start) - pred_map[y_start,x_start:x_end,0]),
-      tf.math.abs(pred_map[y_start,x_start:x_end,2] - tmp_tag),
-      ],axis=-1)
-    # tmp_ys = tf.where(tmp_ys > (1. / sigma_2),tmp_ys - (0.5 / sigma_2),tf.pow(tmp_ys, 2) * (sigma_2 / 2.))
-    tmp_ys = tf.reduce_sum(tmp_ys,axis=-1)
+    tmp_det_sum += tf.reduce_mean(f_smooth(tf.math.abs(f_y_start - float(y_start) - pred_map[y_start,x_start:x_end,0])))
+    tmp_det_sum += tf.reduce_mean(f_smooth(tf.math.abs(pred_map[y_start,x_start:x_end,2] - tmp_tag)))
+    # tmp_det_sum += tf.reduce_mean(tf.math.squared_difference(f_y_start - float(y_start),pred_map[y_start,x_start:x_end,0]))
 
-    tmp_ysc = 0.0
     if(use_cross and x_end-x_start>3):
-      tmp_ysc = tf.stack([
-        tf.math.abs(pred_map[y_start,(x_start+1):(x_end-1),1]),
-        tf.math.abs(pred_map[y_start,(x_start+1):(x_end-1),3]),
-        ],axis=-1)
+      tmp_det_sum += tf.reduce_mean(f_smooth(tf.math.abs(pred_map[y_start,(x_start+1):(x_end-1),3])))
+      tmp_det_sum += tf.reduce_mean(f_smooth(tf.math.abs(pred_map[y_start,(x_start+1):(x_end-1),1])))
       # tmp_ysc = tf.where(tmp_ysc > (1. / sigma_2),tmp_ysc - (0.5 / sigma_2),tf.pow(tmp_ysc, 2) * (sigma_2 / 2.))
-      tmp_ysc = tf.reduce_sum(tmp_ysc,axis=-1)
 
-    tmp_ye = 0.0
-    tmp_yec = 0.0
     if((y_end-1)>y_start):
-      tmp_ye = tf.stack([
-        # down boundary
-        tf.math.abs(pred_map[(y_end-1),x_start:x_end,0]),
-        tf.math.abs(f_y_end - float(y_end) - pred_map[(y_end-1),x_start:x_end,2]),
-        ],axis=-1)
+      tmp_det_sum += tf.reduce_mean(f_smooth(tf.math.abs(pred_map[(y_end-1),x_start:x_end,0])))
+      tmp_det_sum += tf.reduce_mean(f_smooth(tf.math.abs(f_y_end - float(y_end) - pred_map[(y_end-1),x_start:x_end,2])))
+      # tmp_det_sum += tf.reduce_mean(tf.math.squared_difference(f_y_end - float(y_end), pred_map[(y_end-1),x_start:x_end,2]))
       # tmp_ye = tf.where(tmp_ye > (1. / sigma_2),tmp_ye - (0.5 / sigma_2),tf.pow(tmp_ye, 2) * (sigma_2 / 2.))
-      tmp_ye = tf.reduce_sum(tmp_ye,axis=-1)
 
       if(use_cross and x_end-x_start>3):
-        tmp_yec = tf.stack([
-          tf.math.abs(pred_map[(y_end-1),(x_start+1):(x_end-1),1]),
-          tf.math.abs(pred_map[(y_end-1),(x_start+1):(x_end-1),3]),
-          ],axis=-1)
+        tmp_det_sum += tf.reduce_mean(f_smooth(tf.math.abs(pred_map[(y_end-1),(x_start+1):(x_end-1),1])))
+        tmp_det_sum += tf.reduce_mean(f_smooth(tf.math.abs(pred_map[(y_end-1),(x_start+1):(x_end-1),3])))
         # tmp_yec = tf.where(tmp_yec > (1. / sigma_2),tmp_yec - (0.5 / sigma_2),tf.pow(tmp_yec, 2) * (sigma_2 / 2.))
-        tmp_yec = tf.reduce_sum(tmp_yec,axis=-1)
     
     tmp_tag = 0.0 if ((x_end-1)>x_start) else f_x_end - x_end
-    tmp_xs = tf.stack([
-      # down boundary
-      tf.math.abs(f_x_start - float(x_start) - pred_map[y_start:y_end,x_start,1]),
-      tf.math.abs(pred_map[y_start:y_end,x_start,3] - tmp_tag),
-      ],axis=-1)
+    tmp_det_sum += tf.reduce_mean(f_smooth(tf.math.abs(f_x_start - float(x_start) - pred_map[y_start:y_end,x_start,1])))
+    tmp_det_sum += tf.reduce_mean(f_smooth(tf.math.abs(pred_map[y_start:y_end,x_start,3] - tmp_tag)))
+    # tmp_det_sum += tf.reduce_mean(tf.math.squared_difference(f_x_start - float(x_start),pred_map[y_start:y_end,x_start,1]))
     # tmp_xs = tf.where(tmp_xs > (1. / sigma_2),tmp_xs - (0.5 / sigma_2),tf.pow(tmp_xs, 2) * (sigma_2 / 2.))
-    tmp_xs = tf.reduce_sum(tmp_xs,axis=-1)
 
-    tmp_xsc = 0.0
     if(use_cross and y_end-y_start>3):
-      tmp_xsc = tf.stack([
-        tf.math.abs(pred_map[(y_start+1):(y_end-1),x_start,0]),
-        tf.math.abs(pred_map[(y_start+1):(y_end-1),x_start,2]),
-        ],axis=-1)
+      tmp_det_sum += tf.reduce_mean(f_smooth(tf.math.abs(pred_map[(y_start+1):(y_end-1),x_start,0])))
+      tmp_det_sum += tf.reduce_mean(f_smooth(tf.math.abs(pred_map[(y_start+1):(y_end-1),x_start,2])))
       # tmp_xsc = tf.where(tmp_xsc > (1. / sigma_2),tmp_xsc - (0.5 / sigma_2),tf.pow(tmp_xsc, 2) * (sigma_2 / 2.))
-      tmp_xsc = tf.reduce_sum(tmp_xsc,axis=-1)
 
-    tmp_xe = 0.0
-    tmp_xec = 0.0
     if((x_end-1)>x_start):
-      tmp_xe = tf.stack([
-        # down boundary
-        tf.math.abs(pred_map[y_start:y_end,(x_end-1),1]),
-        tf.math.abs(f_x_end - float(x_end) - pred_map[y_start:y_end,(x_end-1),3]),
-        ],axis=-1)
+      # down boundary
+      tmp_det_sum += tf.reduce_mean(f_smooth(tf.math.abs(pred_map[y_start:y_end,(x_end-1),1])))
+      tmp_det_sum += tf.reduce_mean(f_smooth(tf.math.abs(f_x_end - float(x_end) - pred_map[y_start:y_end,(x_end-1),3])))
+      # tmp_det_sum += tf.reduce_mean(tf.math.squared_difference(f_x_end - float(x_end),pred_map[y_start:y_end,(x_end-1),3]))
       # tmp_xe = tf.where(tmp_xe > (1. / sigma_2),tmp_xe - (0.5 / sigma_2),tf.pow(tmp_xe, 2) * (sigma_2 / 2.))
-      tmp_xe = tf.reduce_sum(tmp_xe,axis=-1)
 
       if(use_cross and y_end-y_start>3):
-        tmp_xec = tf.stack([
-          tf.math.abs(pred_map[(y_start+1):(y_end-1),(x_end-1),0]),
-          tf.math.abs(pred_map[(y_start+1):(y_end-1),(x_end-1),2]),
-          ],axis=-1)
+        tmp_det_sum += tf.reduce_mean(f_smooth(tf.math.abs(pred_map[(y_start+1):(y_end-1),(x_end-1),0])))
+        tmp_det_sum += tf.reduce_mean(f_smooth(tf.math.abs(pred_map[(y_start+1):(y_end-1),(x_end-1),2])))
         # tmp_xec = tf.where(tmp_xec > (1. / sigma_2),tmp_xec - (0.5 / sigma_2),tf.pow(tmp_xec, 2) * (sigma_2 / 2.))
-        tmp_xec = tf.reduce_sum(tmp_xec,axis=-1)
 
-    tmp_det = tf.math.reduce_mean(tmp_ys)+tf.math.reduce_mean(tmp_ye)+tf.math.reduce_mean(tmp_xs)+tf.math.reduce_mean(tmp_xe)
-    if(use_cross):
-      tmp_det += tf.math.reduce_mean(tmp_ysc)+tf.math.reduce_mean(tmp_yec)+tf.math.reduce_mean(tmp_xsc)+tf.math.reduce_mean(tmp_xec)
-    abs_boundary_det+=[tmp_det]
+    abs_boundary_det+=[tmp_det_sum]
 
   return tf.convert_to_tensor(abs_boundary_det)
