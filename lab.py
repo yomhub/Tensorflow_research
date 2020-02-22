@@ -10,12 +10,23 @@ from lib.frcnn_trainer import FRCNNTrainer
 from lib.tflib.bbox_transform import *
 from lib.tflib.evaluate_tools import *
 from lib.tflib.log_tools import auto_image,save_image
+from lib.dataloader.total import TTText
 # 
 
+__DEF_LOCAL_DIR = os.path.split(__file__)[0]
+__DEF_DATA_DIR = os.path.join(__DEF_LOCAL_DIR,'mydataset')
+__DEF_CTW_DIR = os.path.join(__DEF_DATA_DIR,'ctw')
+__DEF_SVT_DIR = os.path.join(__DEF_DATA_DIR,'svt')
+__DEF_TTT_DIR = os.path.join(__DEF_DATA_DIR,'totaltext')
+
 if __name__ == "__main__":
-  mydatalog = SVT(out_size=[640,360])
+  mydatalog = TTText(__DEF_TTT_DIR)
   # x_train, y_train = mydatalog.read_train_batch(1)
   loss = LRCNNLoss((360,640),gtformat='xywh')
+  x_train, y_train = mydatalog.read_train_batch(10)
+  x_train, y_train = mydatalog.read_train_batch(1)
+  x_train, y_train = mydatalog.read_test_batch(1)
+  x_train, y_train = mydatalog.read_test_batch(10)
   model = Label_RCNN()
   model(tf.zeros((1,360,640,3)))
   opt = tf.keras.optimizers.Adam(learning_rate=0.001)

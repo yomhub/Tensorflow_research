@@ -3,8 +3,9 @@ import tensorflow as tf
 import numpy as np
 import argparse
 from datetime import datetime
-from mydataset.ctw import CTW
-from mydataset.svt import SVT
+from lib.dataloader.ctw import CTW
+from lib.dataloader.svt import SVT
+from lib.dataloader.total import TTText
 from lib.model.config import cfg
 from lib.model.faster_rcnn import Faster_RCNN, RCNNLoss
 from lib.model.label_rcnn import Label_RCNN, LRCNNLoss
@@ -13,17 +14,26 @@ from lib.label_rcnn_trainer import LRCNNTrainer
 from lib.tflib.evaluate_tools import draw_boxes
 from lib.tflib.log_tools import save_image
 
-if __name__ == "__main__":
+__DEF_INDEX = 1
+__DEF_IMG_SIZE = [[1280,720],[int(1280/2),int(720/2)]]
 
+__DEF_LOCAL_DIR = os.path.split(__file__)[0]
+__DEF_DATA_DIR = os.path.join(__DEF_LOCAL_DIR,'mydataset')
+__DEF_CTW_DIR = os.path.join(__DEF_DATA_DIR,'ctw')
+__DEF_SVT_DIR = os.path.join(__DEF_DATA_DIR,'svt')
+__DEF_TTT_DIR = os.path.join(__DEF_DATA_DIR,'totaltext')
+
+
+if __name__ == "__main__":
   parser = argparse.ArgumentParser(description='Choose settings.')
   parser.add_argument('--proposal', help='Choose proposal in nms and top_k.',default='top_k')
   parser.add_argument('--opt', help='Choose optimizer in sgd and adam.',default='adam')
   parser.add_argument('--debug', help='Set --debug if want to debug.', action="store_true")
   parser.add_argument('--net', help='Choose noework (frcnn/lrcnn).', default="lrcnn")
   parser.add_argument('--name', help='Name of task.')
-  parser.add_argument('--dataset', help='Choose dataset.', default="svt")
-  parser.add_argument('--datax', type=int, help='Dataset output width.',default=1280)
-  parser.add_argument('--datay', type=int, help='Dataset output height.',default=720)
+  parser.add_argument('--dataset', help='Choose dataset.', default="ttt")
+  parser.add_argument('--datax', type=int, help='Dataset output width.',default=__DEF_IMG_SIZE[__DEF_INDEX][0])
+  parser.add_argument('--datay', type=int, help='Dataset output height.',default=__DEF_IMG_SIZE[__DEF_INDEX][1])
   parser.add_argument('--step', type=int, help='Step size.',default=10)
   parser.add_argument('--batch', type=int, help='Batch size.',default=20)
   parser.add_argument('--cross', help='Set --cross if want to cross box loss.', action="store_true")
@@ -41,18 +51,29 @@ if __name__ == "__main__":
 
   isdebug = args.debug
   # isdebug = True
-  
+  opt_schedule = [0.6,0.8]
+
   if(args.opt.lower()=='sgd'):
     optimizer = tf.keras.optimizers.SGD(learning_rate=args.learnrate)
   else:
     optimizer = tf.keras.optimizers.Adam(learning_rate=args.learnrate)
 
-  if(args.dataset=='svt'):
-    mydatalog = SVT(out_size=[args.datax,args.datay])
+  if(args.dataset.lower()=='svt'):
+    mydatalog = SVT(__DEF_SVT_DIR,out_size=[args.datay,args.datax])
     gtformat = 'xywh'
+  elif(args.dataset.lower()=='ttt'):
+    mydatalog = TTText(__DEF_TTT_DIR,out_size=[args.datay,args.datax])
+    gtformat = 'mask'
   else:
-    mydatalog = CTW(out_size=[args.datax,args.datay])
+    mydatalog = CTW(out_size=[args.datay,args.datax],
+      ctw_dir=__DEF_CTW_DIR,
+      train_img_dir=os.path.join(__DEF_CTW_DIR, 'train'),
+      test_img_dir=os.path.join(__DEF_CTW_DIR, 'test'),
+      ann_filename='ctw-annotations',
+      log_dir=os.path.join(__DEF_CTW_DIR, 'log.txt'),
+      )
     gtformat='yxyx'
+    
 
   if(args.net=='frcnn'):
     # faster RCNN
@@ -89,7 +110,7 @@ if __name__ == "__main__":
     for i in range(args.batch):
       x_train, y_train = mydatalog.read_train_batch(args.step)
       # x_val, y_val = mydatalog.read_test_batch(2)
-      x_val, y_val = x_train[0:3], y_train[0:3]
+      x_val, y_val = x_train[0:2], y_train[0:2]
       # if(islog==False):
       #   imgs = draw_boxes(x_train,y_train)
       #   # imgs = tf.split(imgs,imgs.shape[0],axis=0)
@@ -99,12 +120,11 @@ if __name__ == "__main__":
       #   islog=True
         
       trainer.fit(x_train,y_train,model,loss,optimizer)
-      if(i<11):
-        trainer.evaluate(x_val,y_val)
+      # trainer.evaluate(x_val,y_val)
         # trainer.evaluate(x_train[0:2],y_val[0:2])
-      if(i==int(args.batch/2)):
-        optimizer = tf.keras.optimizers.SGD(learning_rate=args.learnrate)
-        trainer.set_trainer(opt=optimizer)
+      # if(i==int(args.batch/2)):
+      #   optimizer = tf.keras.optimizers.SGD(learning_rate=args.learnrate)
+      #   trainer.set_trainer(opt=optimizer)
       # if(i%10==0):
       #   trainer.set_trainer(data_count=mydatalog._init_conter)
       #   trainer.save()

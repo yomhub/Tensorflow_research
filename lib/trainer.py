@@ -103,8 +103,9 @@ class Trainer():
         model = self.model
       else:
         return
-        
-    x_val = tf.split(x_val,total_data,axis=0)
+    
+    if(type(x_val)!=list):
+      x_val = tf.split(x_val,total_data,axis=0)
     cur_stp = self.eva_step
     for step in range(total_data):
       if(x_val[step].dtype!=tf.float32 or x_val[step].dtype!=tf.float64):
@@ -127,7 +128,8 @@ class Trainer():
     tstart = datetime.now()
     total_data = x_train.shape[0]
     cur_stp = self.current_step
-    x_train = tf.split(x_train,x_train.shape[0],axis=0)
+    if(type(x_train)!=list):
+      x_train = tf.split(x_train,x_train.shape[0],axis=0)
     logger = open(os.path.join(self.logs_path,'result.txt'),'a+',encoding='utf8')
     if(not(self.isdebug)):
       logger.write(datetime.now().strftime("%Y%m%d-%H%M%S")+'\n')

@@ -22,6 +22,23 @@ def reset(tarinfo):
     tarinfo.mode = 0o644
     return tarinfo
 
+def _text2word(texts,label=1,ratio=None):
+  """
+    texts: polygon with (N,4,2)
+      where 4 is [downLeft,downRight,topRight,topLeft]
+      and 2 is [x,y]
+    ratio: [rx,ry]
+    return: [label,y1,x1,y2,x2]
+  """
+  texts = np.array(texts)
+  x1 = texts[:,0::3,0].min() # tl(0),dl(3)
+  y1 = texts[:,0:2,1].min() # dr(1),dl(0)
+  x2 = texts[:,1:3,0].max() # tr(1),dr(2)
+  y2 = texts[:,2:4,1].max() # tl(3),tr(2)
+  if(ratio!=None):
+    return [label,y1*ratio[1],x1*ratio[0],y2*ratio[1],x2*ratio[0]]
+  return [label,y1,x1,y2,x2]
+
 def _load_and_preprocess_image(imgdir, outsize=None):
     fd=""
     if isinstance(imgdir,str):
@@ -32,7 +49,7 @@ def _load_and_preprocess_image(imgdir, outsize=None):
     if(outsize!=None):
         image = tf.image.resize(image, outsize)
     # image = tf.reshape(image,(1, image.shape[0], image.shape[1], image.shape[2]))
-    image = tf.dtypes.cast(image, tf.uint8)
+    # image = tf.dtypes.cast(image, tf.uint8)
 
     return image
 
@@ -103,7 +120,7 @@ class CTW():
           cls_type: define class value, "UNICODE" or "BOOL"
             UNICODE: return text unicode value
             BOOL: return 1 if obj is test, other case 0 (tf.int8)
-          out_size: [width,height] or None means orign size
+          out_size: [height,width] or None means orign size
         """
         # load info list in ctw_dir/ann_filename/ floder
         
@@ -134,10 +151,7 @@ class CTW():
         # _train_list[0]['annotations'][0][0]['attributes']: list of string, may have "bgcomplex", "distorted", "raised"
         # _train_list[0]['annotations'][0][0]['is_chinese']: true or flase
         # _train_list[0]['annotations'][0][0]['polygon']: list of box 4 points
-        #                                                 top left:[x, y]
-        #                                                 top right:[x, y]
-        #                                                 down right:[x, y]
-        #                                                 down left:[x, y]
+      #                                      [downLeft,downRight,topRight,topLeft] with [x,y]
         # _train_list[0]['annotations'][0][0]['text']: string, unicode in chinese
 
         # _val_list: same as _train_list
@@ -199,16 +213,25 @@ class CTW():
                 if(len(tmp.shape)==4):
                     tmp=tf.reshape(tmp[0,:,:,:],[tmp.shape[1],tmp.shape[2],tmp.shape[3]])
                 img_arr_list.append(tmp)
-                    
+                
                 for word in self._train_list[i]['annotations']:
+                    plytmp = []
                     for text in word:
-                        if(self._out_size!=None):
-                          gtmp=text["adjusted_bbox"]
-                          gtmp=[gtmp[0]*ratioX,gtmp[1]*ratioY,gtmp[2]*ratioX,gtmp[3]*ratioY]
-                          ytmp.append([float(text['is_chinese']),]+gtmp)
-                        else:
-                          ytmp.append([float(text['is_chinese']),]+text["adjusted_bbox"])
-                y_list.append(tf.convert_to_tensor(ytmp))
+                        plytmp.append(text["polygon"])
+                        # ytmp.append([float(text['is_chinese'])])
+                        # if(self._out_size!=None):
+                        #   gtmp=text["adjusted_bbox"]
+                        #   gtmp=[gtmp[0]*ratioX,gtmp[1]*ratioY,gtmp[2]*ratioX,gtmp[3]*ratioY]
+                        #   ytmp.append([float(text['is_chinese']),]+gtmp)
+                        #   plytmp.append(text["polygon"])
+                          
+                        # else:
+                        #   ytmp.append([float(text['is_chinese']),]+text["adjusted_bbox"])
+                    if(self._out_size!=None):
+                      ytmp.append(_text2word(plytmp,ratio=[ratioX,ratioY]))
+                    else:
+                      ytmp.append(_text2word(plytmp))
+                y_list.append(tf.convert_to_tensor(ytmp,dtype=tf.float32))
                 
             except IndexError:
                 return None
@@ -257,4 +280,34 @@ class CTW():
                     self._train_list[self._init_conter]['file_name']) +
                     "\n")
                 self._init_conter+=1        
+    def statistic(self):
+        all_imgs = len(self._train_list)
+        conter = 0
+        im_list = []
+        for im in self._train_list:
+            if(type(im)!=type({})):
+              continue
+            h = im['height']
+            w = im['width']
+            tx_aria = []
+            txtcount=0
+            for word in im['annotations']:
+                for text in word:
+                    tx_aria.append([text['adjusted_bbox'][2],text['adjusted_bbox'][3]])
+                    txtcount+=1
+            tf_tx_aria = tf.convert_to_tensor(tx_aria,dtype=tf.float32)
+            # aras = tf_tx_aria[:,0]*tf_tx_aria[:,1]
+            aras = tf.reduce_sum(tf_tx_aria[:,0]*tf_tx_aria[:,1])
+            pnum = aras.numpy()/(h*w)
+            im_list.append([pnum,pnum/txtcount])
 
+        im_result = tf.convert_to_tensor(im_list,dtype=tf.float64)
+        # tf_im_result = tf.reduce_min(im_result,axis=0)
+        # tf_im_result = tf.reduce_max(im_result,axis=0)
+        print(tf.reduce_mean(im_result,axis=0).numpy())
+        print(tf.reduce_min(im_result,axis=0).numpy())
+        print(tf.reduce_max(im_result,axis=0).numpy())
+        # file_writer = tf.summary.create_file_writer("logs")
+        # file_writer.set_as_default()
+        # tf.summary.histogram('Area sum per img', im_result[:,0], step=0)
+        # tf.summary.histogram('Area sum per txt', im_result[:,1], step=0)

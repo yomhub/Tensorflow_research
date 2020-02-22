@@ -120,18 +120,38 @@ def _read_swt(swt_dir,
 
 class SVT():
 
-    def __init__(self,
-    out_size = [512,512],
-    ):
+    def __init__(self,dir,out_size = [512,512]):
         """
-            out_size: [width,height]
+            out_size: [y,x]
         """
-        self.out_y = out_size[1]
-        self.out_x = out_size[0]
-        self._xtdir, self._ytest = _read_xml(_TEST_XML,self.out_x,self.out_y)
-        self._xtraindir, self._ytrain = _read_xml(_TRAIN_XML,self.out_x,self.out_y)
+        self.out_y = out_size[0]
+        self.out_x = out_size[1]
+        self._xtdir, self._ytest = _read_xml(os.path.join(dir,'test.xml'),self.out_x,self.out_y)
+        self._xtraindir, self._ytrain = _read_xml(os.path.join(dir,'train.xml'),self.out_x,self.out_y)
         self._init_conter = 0
-    
+        self._init_test_conter = 0
+
+    def read_test_batch(self, batch_size=10):
+        mend = min(len(self._xtdir),self._init_test_conter+batch_size)
+        inds = slice(self._init_test_conter,mend) 
+        readnum = mend-self._init_test_conter
+        self._init_test_conter += readnum
+        xret = self._xtdir[inds]
+        yret = self._ytest[inds]
+
+        if(readnum < batch_size):
+            inds = slice(batch_size - readnum)
+            self._init_test_conter = batch_size - readnum
+            yret += self._ytest[inds]
+            xret += self._xtdir[inds]
+
+        img_list = []
+        for tname in xret:
+            img = _load_and_preprocess_image(tname,self.out_x,self.out_y)
+            img_list.append(img)
+        img_list = tf.stack(img_list)
+        return img_list, yret
+
     def read_train_batch(self, batch_size=10):
         mend = min(len(self._xtraindir),self._init_conter+batch_size)
         inds = slice(self._init_conter,mend) 
@@ -155,7 +175,7 @@ class SVT():
         
     def setconter(self,conter):
         self._init_conter = conter
-        
+
     def caculate_avg(self):
         avg_area_pre_img = []
         for tar in self._ytrain:

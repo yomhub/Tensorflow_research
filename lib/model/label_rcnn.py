@@ -223,7 +223,16 @@ class Label_RCNN(tf.keras.Model):
     return self.y_pred
 
 class LRCNNLoss(tf.keras.losses.Loss):
-  def __init__(self,imge_size,gtformat='yxyx',use_cross=True):
+  def __init__(self,imge_size,gtformat='yxyx',use_cross=True,mag_f='smooth'):
+    """
+      Args:
+        use_cross: set True to use cross loss function
+        mag_f: magnification function, can be
+          string: 'smooth', apply L1 smooth on loss function 
+          string: 'sigmoid', apply sigmoid on loss function 
+          tf.keras.layers.Lambda: apply input Lambda object
+          others, don't apply any magnification function
+    """
     super(LRCNNLoss, self).__init__()
     gtformat = gtformat.lower()
     if(gtformat.lower()=='yxyx' or gtformat.lower()=='yx'):
@@ -232,8 +241,10 @@ class LRCNNLoss(tf.keras.losses.Loss):
       self.gtformat='xywh'
     self.imge_size = imge_size
     self.use_cross = use_cross
+    self.mag_f = mag_f
 
   def _label_loss(self,pred_score,y_true):
+    # sigmoid get a divergent loss
     losstype='softmax'
     labels, weights = gen_label_with_width_from_gt(pred_score.shape[1:3],y_true,self.imge_size,0)
     labels = tf.reshape(labels,[-1])
@@ -264,7 +275,7 @@ class LRCNNLoss(tf.keras.losses.Loss):
     
   def _boxes_loss(self,box_prd,y_true):
     # loss_value = pre_box_loss(y_true,box_prd,self.imge_size)
-    loss_value = pre_box_loss_by_det(y_true,box_prd,self.imge_size,use_cross=self.use_cross)
+    loss_value = pre_box_loss_by_det(y_true,box_prd,self.imge_size,use_cross=self.use_cross,mag_f=self.mag_f)
     # loss_value = loss_value / tf.math.reduce_sum((y_true[:,2]-y_true[:,0])*(y_true[:,3]-y_true[:,1]))
     return tf.math.reduce_mean(loss_value)
 

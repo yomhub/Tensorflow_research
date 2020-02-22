@@ -469,7 +469,7 @@ def pre_box_loss(gt_box, pred_map, org_size=None, sigma=1.0):
   return tf.convert_to_tensor(abs_boundary_det)
 
 
-def pre_box_loss_by_det(gt_box, det_map, org_size=None, sigma=1.0, use_cross=True):
+def pre_box_loss_by_det(gt_box, det_map, org_size=None, sigma=1.0, use_cross=True, mag_f='smooth'):
   """
     Args:
       gt_box: tensor (total_gts,4) with [y1, x1, y2, x2]
@@ -477,17 +477,35 @@ def pre_box_loss_by_det(gt_box, det_map, org_size=None, sigma=1.0, use_cross=Tru
       det_map: deta in prediction layer 
         tensor ((1),h,w,4) with [dy1, dx1, dy2, dx2]
       org_size: original image size (h,w)
+      mag_f: magnification function, can be
+        string: 'smooth', apply L1 smooth on loss function 
+        string: 'sigmoid', apply sigmoid on loss function 
+        tf.keras.layers.Lambda: apply input Lambda object
+        others, don't apply any magnification function
     Return:
       loss value
   """
   pred_map = tf.reshape(det_map,det_map.shape[-3:])
   use_cross=False
-  sigma_2 = sigma**2
   if(org_size==None):
     cube_h,cube_w = 1,1
   else:
     cube_h,cube_w = org_size[0]/pred_map.shape[-3],org_size[1]/pred_map.shape[-2]
-  f_smooth = tf.keras.layers.Lambda(lambda x: tf.where(x > (1. / x),x - (0.5 / sigma_2),tf.pow(x, 2) * (sigma_2 / 2.)))
+  
+  sigma_2 = sigma**2
+
+  if(type(mag_f)==str):
+    mag_f = mag_f.lower()
+    if(mag_f=='tanh'):
+      mag_f = tf.keras.layers.Lambda(lambda x: tf.math.sigmoid(x))
+    elif(mag_f=='smooth'):
+      mag_f = tf.keras.layers.Lambda(lambda x: tf.where(x > (1. / x),x - (0.5 / sigma_2),tf.pow(x, 2) * (sigma_2 / 2.)))
+    else:
+      mag_f = tf.keras.layers.Lambda(lambda x:x)
+  elif(mag_f == None):
+    mag_f = tf.keras.layers.Lambda(lambda x:x)
+  # No need to convert type tf.keras.layers.Lambda
+
   abs_boundary_det = []
   for box in gt_box:
     f_x_start,f_x_end = box[1] / cube_w,box[3] / cube_w
@@ -499,47 +517,47 @@ def pre_box_loss_by_det(gt_box, det_map, org_size=None, sigma=1.0, use_cross=Tru
     
     tmp_det_sum = 0.0
     tmp_tag = 0.0 if ((y_end-1)>y_start) else f_y_end - y_end
-    tmp_det_sum += tf.reduce_mean(f_smooth(tf.math.abs(f_y_start - float(y_start) - pred_map[y_start,x_start:x_end,0])))
-    tmp_det_sum += tf.reduce_mean(f_smooth(tf.math.abs(pred_map[y_start,x_start:x_end,2] - tmp_tag)))
+    tmp_det_sum += tf.reduce_mean(mag_f(tf.math.abs(f_y_start - float(y_start) - pred_map[y_start,x_start:x_end,0])))
+    tmp_det_sum += tf.reduce_mean(mag_f(tf.math.abs(pred_map[y_start,x_start:x_end,2] - tmp_tag)))
     # tmp_det_sum += tf.reduce_mean(tf.math.squared_difference(f_y_start - float(y_start),pred_map[y_start,x_start:x_end,0]))
 
     if(use_cross and x_end-x_start>3):
-      tmp_det_sum += tf.reduce_mean(f_smooth(tf.math.abs(pred_map[y_start,(x_start+1):(x_end-1),3])))
-      tmp_det_sum += tf.reduce_mean(f_smooth(tf.math.abs(pred_map[y_start,(x_start+1):(x_end-1),1])))
+      tmp_det_sum += tf.reduce_mean(mag_f(tf.math.abs(pred_map[y_start,(x_start+1):(x_end-1),3])))
+      tmp_det_sum += tf.reduce_mean(mag_f(tf.math.abs(pred_map[y_start,(x_start+1):(x_end-1),1])))
       # tmp_ysc = tf.where(tmp_ysc > (1. / sigma_2),tmp_ysc - (0.5 / sigma_2),tf.pow(tmp_ysc, 2) * (sigma_2 / 2.))
 
     if((y_end-1)>y_start):
-      tmp_det_sum += tf.reduce_mean(f_smooth(tf.math.abs(pred_map[(y_end-1),x_start:x_end,0])))
-      tmp_det_sum += tf.reduce_mean(f_smooth(tf.math.abs(f_y_end - float(y_end) - pred_map[(y_end-1),x_start:x_end,2])))
+      tmp_det_sum += tf.reduce_mean(mag_f(tf.math.abs(pred_map[(y_end-1),x_start:x_end,0])))
+      tmp_det_sum += tf.reduce_mean(mag_f(tf.math.abs(f_y_end - float(y_end) - pred_map[(y_end-1),x_start:x_end,2])))
       # tmp_det_sum += tf.reduce_mean(tf.math.squared_difference(f_y_end - float(y_end), pred_map[(y_end-1),x_start:x_end,2]))
       # tmp_ye = tf.where(tmp_ye > (1. / sigma_2),tmp_ye - (0.5 / sigma_2),tf.pow(tmp_ye, 2) * (sigma_2 / 2.))
 
       if(use_cross and x_end-x_start>3):
-        tmp_det_sum += tf.reduce_mean(f_smooth(tf.math.abs(pred_map[(y_end-1),(x_start+1):(x_end-1),1])))
-        tmp_det_sum += tf.reduce_mean(f_smooth(tf.math.abs(pred_map[(y_end-1),(x_start+1):(x_end-1),3])))
+        tmp_det_sum += tf.reduce_mean(mag_f(tf.math.abs(pred_map[(y_end-1),(x_start+1):(x_end-1),1])))
+        tmp_det_sum += tf.reduce_mean(mag_f(tf.math.abs(pred_map[(y_end-1),(x_start+1):(x_end-1),3])))
         # tmp_yec = tf.where(tmp_yec > (1. / sigma_2),tmp_yec - (0.5 / sigma_2),tf.pow(tmp_yec, 2) * (sigma_2 / 2.))
     
     tmp_tag = 0.0 if ((x_end-1)>x_start) else f_x_end - x_end
-    tmp_det_sum += tf.reduce_mean(f_smooth(tf.math.abs(f_x_start - float(x_start) - pred_map[y_start:y_end,x_start,1])))
-    tmp_det_sum += tf.reduce_mean(f_smooth(tf.math.abs(pred_map[y_start:y_end,x_start,3] - tmp_tag)))
+    tmp_det_sum += tf.reduce_mean(mag_f(tf.math.abs(f_x_start - float(x_start) - pred_map[y_start:y_end,x_start,1])))
+    tmp_det_sum += tf.reduce_mean(mag_f(tf.math.abs(pred_map[y_start:y_end,x_start,3] - tmp_tag)))
     # tmp_det_sum += tf.reduce_mean(tf.math.squared_difference(f_x_start - float(x_start),pred_map[y_start:y_end,x_start,1]))
     # tmp_xs = tf.where(tmp_xs > (1. / sigma_2),tmp_xs - (0.5 / sigma_2),tf.pow(tmp_xs, 2) * (sigma_2 / 2.))
 
     if(use_cross and y_end-y_start>3):
-      tmp_det_sum += tf.reduce_mean(f_smooth(tf.math.abs(pred_map[(y_start+1):(y_end-1),x_start,0])))
-      tmp_det_sum += tf.reduce_mean(f_smooth(tf.math.abs(pred_map[(y_start+1):(y_end-1),x_start,2])))
+      tmp_det_sum += tf.reduce_mean(mag_f(tf.math.abs(pred_map[(y_start+1):(y_end-1),x_start,0])))
+      tmp_det_sum += tf.reduce_mean(mag_f(tf.math.abs(pred_map[(y_start+1):(y_end-1),x_start,2])))
       # tmp_xsc = tf.where(tmp_xsc > (1. / sigma_2),tmp_xsc - (0.5 / sigma_2),tf.pow(tmp_xsc, 2) * (sigma_2 / 2.))
 
     if((x_end-1)>x_start):
       # down boundary
-      tmp_det_sum += tf.reduce_mean(f_smooth(tf.math.abs(pred_map[y_start:y_end,(x_end-1),1])))
-      tmp_det_sum += tf.reduce_mean(f_smooth(tf.math.abs(f_x_end - float(x_end) - pred_map[y_start:y_end,(x_end-1),3])))
+      tmp_det_sum += tf.reduce_mean(mag_f(tf.math.abs(pred_map[y_start:y_end,(x_end-1),1])))
+      tmp_det_sum += tf.reduce_mean(mag_f(tf.math.abs(f_x_end - float(x_end) - pred_map[y_start:y_end,(x_end-1),3])))
       # tmp_det_sum += tf.reduce_mean(tf.math.squared_difference(f_x_end - float(x_end),pred_map[y_start:y_end,(x_end-1),3]))
       # tmp_xe = tf.where(tmp_xe > (1. / sigma_2),tmp_xe - (0.5 / sigma_2),tf.pow(tmp_xe, 2) * (sigma_2 / 2.))
 
       if(use_cross and y_end-y_start>3):
-        tmp_det_sum += tf.reduce_mean(f_smooth(tf.math.abs(pred_map[(y_start+1):(y_end-1),(x_end-1),0])))
-        tmp_det_sum += tf.reduce_mean(f_smooth(tf.math.abs(pred_map[(y_start+1):(y_end-1),(x_end-1),2])))
+        tmp_det_sum += tf.reduce_mean(mag_f(tf.math.abs(pred_map[(y_start+1):(y_end-1),(x_end-1),0])))
+        tmp_det_sum += tf.reduce_mean(mag_f(tf.math.abs(pred_map[(y_start+1):(y_end-1),(x_end-1),2])))
         # tmp_xec = tf.where(tmp_xec > (1. / sigma_2),tmp_xec - (0.5 / sigma_2),tf.pow(tmp_xec, 2) * (sigma_2 / 2.))
 
     abs_boundary_det+=[tmp_det_sum]
