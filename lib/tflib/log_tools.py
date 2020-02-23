@@ -1,4 +1,6 @@
 import tensorflow as tf
+import numpy as np
+import matplotlib.pyplot as plt
 from datetime import datetime
 
 def str2time(instr):
@@ -60,3 +62,23 @@ def save_image(img, savedir):
   if(len(img.shape)==4):
     img = tf.reshape(img,img.shape[1:])
   tf.io.write_file(savedir,tf.io.encode_jpeg(tf.cast(img,tf.uint8)))
+
+def plt_draw_lines(funcs,xarry=None,cols=None,fig_size=None,fig_num=None,save_name=None):
+  """
+
+  """
+  plt.figure(num=fig_num,figsize=fig_size)
+  if(xarry==None):
+    xarry=np.range(-5.0,5.0,100)
+  if(type(funcs)!=list):
+    funcs = [funcs]
+  tcols = [
+    'Greys', 'Purples', 'Blues', 'Greens', 'Oranges', 'Reds',
+    'YlOrBr', 'YlOrRd', 'OrRd', 'PuRd', 'RdPu', 'BuPu',
+    'GnBu', 'PuBu', 'YlGnBu', 'PuBuGn', 'BuGn', 'YlGn']
+  line_sty = [
+    '','--','-.','--.',':'
+  ]
+  for i in range(len(funcs)):
+    plt.plot(xarry,funcs[i],tcols[i],linewidth=1.0,linestyle=line_sty[i])
+  plt.show()

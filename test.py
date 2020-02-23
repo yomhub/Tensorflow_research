@@ -31,7 +31,7 @@ if __name__ == "__main__":
   parser.add_argument('--debug', help='Set --debug if want to debug.', action="store_true")
   parser.add_argument('--net', help='Choose noework (frcnn/lrcnn).', default="lrcnn")
   parser.add_argument('--name', help='Name of task.')
-  parser.add_argument('--dataset', help='Choose dataset.', default="ttt")
+  parser.add_argument('--dataset', help='Choose dataset: ctw/svt/ttt.', default="svt")
   parser.add_argument('--datax', type=int, help='Dataset output width.',default=__DEF_IMG_SIZE[__DEF_INDEX][0])
   parser.add_argument('--datay', type=int, help='Dataset output height.',default=__DEF_IMG_SIZE[__DEF_INDEX][1])
   parser.add_argument('--step', type=int, help='Step size.',default=10)

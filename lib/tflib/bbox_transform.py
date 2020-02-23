@@ -491,14 +491,13 @@ def pre_box_loss_by_det(gt_box, det_map, org_size=None, sigma=1.0, use_cross=Tru
     cube_h,cube_w = 1,1
   else:
     cube_h,cube_w = org_size[0]/pred_map.shape[-3],org_size[1]/pred_map.shape[-2]
-  
-  sigma_2 = sigma**2
 
   if(type(mag_f)==str):
     mag_f = mag_f.lower()
     if(mag_f=='tanh'):
       mag_f = tf.keras.layers.Lambda(lambda x: tf.math.sigmoid(x))
     elif(mag_f=='smooth'):
+      sigma_2 = sigma**2
       mag_f = tf.keras.layers.Lambda(lambda x: tf.where(x > (1. / x),x - (0.5 / sigma_2),tf.pow(x, 2) * (sigma_2 / 2.)))
     else:
       mag_f = tf.keras.layers.Lambda(lambda x:x)
@@ -563,3 +562,39 @@ def pre_box_loss_by_det(gt_box, det_map, org_size=None, sigma=1.0, use_cross=Tru
     abs_boundary_det+=[tmp_det_sum]
 
   return tf.convert_to_tensor(abs_boundary_det)
+
+def pre_box_loss_by_msk(gt_mask, det_map, org_size=None, sigma=1.0, use_cross=True, mag_f='smooth'):
+  """
+    Args:
+      gt_mask: tensor ((1),hm,wm,(1)) mask.
+      det_map: deta in prediction layer 
+        tensor ((1),h,w,4) with [dy1, dx1, dy2, dx2]
+      org_size: original image size (h,w)
+      mag_f: magnification function, can be
+        string: 'smooth', apply L1 smooth on loss function 
+        string: 'sigmoid', apply sigmoid on loss function 
+        tf.keras.layers.Lambda: apply input Lambda object
+        others, don't apply any magnification function
+    Return:
+      loss value
+  """
+  pred_map = tf.reshape(det_map,det_map.shape[-3:])
+  use_cross=False
+  if(org_size==None):
+    cube_h,cube_w = 1,1
+    tmp = len(gt_mask.shape)
+    if(tmp==3):
+      gt_mask = tf.reshape(gt_mask,gt_mask.shape[0:2])
+    elif(tmp==4):
+      gt_mask = tf.reshape(gt_mask,gt_mask.shape[1:3])
+  else:
+    cube_h,cube_w = org_size[0]/pred_map.shape[-3],org_size[1]/pred_map.shape[-2]
+    tmp = len(gt_mask.shape)
+    if(tmp==3):
+      gt_mask = tf.reshape(gt_mask,[1,]+gt_mask.shape)
+    elif(tmp==2):
+      gt_mask = tf.reshape(gt_mask,[1,]+gt_mask.shape+[1])
+    gt_mask = tf.image.resize(gt_mask,pred_map.shape[-3:-1],'nearest')
+    gt_mask = tf.reshape(gt_mask, gt_mask.shape[-3:-1])
+  
+  

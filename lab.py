@@ -19,7 +19,8 @@ __DEF_CTW_DIR = os.path.join(__DEF_DATA_DIR,'ctw')
 __DEF_SVT_DIR = os.path.join(__DEF_DATA_DIR,'svt')
 __DEF_TTT_DIR = os.path.join(__DEF_DATA_DIR,'totaltext')
 
-if __name__ == "__main__":
+# 
+def train_lite():
   mydatalog = TTText(__DEF_TTT_DIR)
   # x_train, y_train = mydatalog.read_train_batch(1)
   loss = LRCNNLoss((360,640),gtformat='xywh')
@@ -40,12 +41,17 @@ if __name__ == "__main__":
         loss = loss(y_train[step],pred)
       grads = tape.gradient(loss, model.trainable_variables)
       opt.apply_gradients(zip(grads, model.trainable_variables))
-  # mydatalog = SVT(out_size=[512,512])
-  # pred = model(x_train)
-  # yy_true = xywh2yxyx(y_train[0][:,1:])
-  # loss_value = pre_box_loss(yy_true,pred["l1_bbox"],[512,512])
-  # path_list, mask_np = build_boxex_from_path(pred["l1_score"],pred["l1_bbox"],pred["l1_ort"],1)
-  # yy_true = map2coordinate(yy_true,[512,512],pred["l1_score"].shape[1:3])
-  # label_list = get_label_from_mask(yy_true,mask_np)
-  # pred = loss(y_train[0],pred)
+
+if __name__ == "__main__":
+  y1 = lambda x: np.tanh(x)
+  y2 = lambda x: x+np.log(2+np.sqrt(3))
+  # y2 = lambda x: x+np.tanh(x)-np.log(2+np.sqrt(3))
+  y3 = lambda x: np.where(x>1,x-0.5,0.5*(x**2))
+  plt.figure(num=1,figsize=[5,5])
+  xarry=np.linspace(0.0,5.0,50)
+  plt.plot(xarry,y1(xarry),color='blue',linewidth=1.0)
+  plt.plot(xarry,y2(xarry),color='red',linewidth=1.0)
+  plt.plot(xarry,y3(xarry),color='green',linewidth=1.0,linestyle='-.')
+  plt.show()
+
   print()
