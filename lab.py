@@ -42,7 +42,7 @@ def train_lite():
       grads = tape.gradient(loss, model.trainable_variables)
       opt.apply_gradients(zip(grads, model.trainable_variables))
 
-if __name__ == "__main__":
+def plt_demo():
   y1 = lambda x: np.tanh(x)
   y2 = lambda x: x+np.log(2+np.sqrt(3))
   # y2 = lambda x: x+np.tanh(x)-np.log(2+np.sqrt(3))
@@ -54,4 +54,11 @@ if __name__ == "__main__":
   plt.plot(xarry,y3(xarry),color='green',linewidth=1.0,linestyle='-.')
   plt.show()
 
+if __name__ == "__main__":
+  mydatalog = TTText(__DEF_TTT_DIR,out_size=[360,640])
+  x_train, y_train = mydatalog.read_train_batch(1)
+  model = Label_RCNN()
+  model(tf.zeros((1,360,640,3)))
+  pred = model(x_train[0])
+  ret = pre_box_loss_by_msk(gt_mask=y_train[0],det_map=pred["l1_bbox_det"],org_size=[360,640])
   print()

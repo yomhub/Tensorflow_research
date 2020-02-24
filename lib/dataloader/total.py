@@ -41,7 +41,8 @@ class TTText():
     self.out_format = 'tensor' if(out_format.lower()=='tensor') else 'list'
     self.train_conter = 0
     self.test_conter = 0
-
+    self.train_img_names = None
+    self.test_img_names = None
     for root, dirs, files in os.walk(self.xtraindir):
       self.train_img_names = [name for name in files if (os.path.splitext(name)[-1] == ".jpg" or
         os.path.splitext(name)[-1] == ".png" or

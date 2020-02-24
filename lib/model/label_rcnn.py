@@ -182,7 +182,8 @@ class Label_RCNN(tf.keras.Model):
       inputs = tf.cast(inputs,tf.float32)
     if(inputs.shape[-3]!=self.imgh or inputs.shape[-2]!=self.imgw):
       inputs = tf.image.resize(inputs,[self.imgh,self.imgw])
-
+    if(len(inputs.shape)==3):
+      inputs = tf.reshape(inputs,[1]+inputs.shape)
     l1_feat,l2_feat,l3_feat = self.feature_model(inputs)
     l1_feat = self.rpn_L1_conv(l1_feat)
     l2_feat = self.rpn_L2_conv(l2_feat)
