@@ -126,10 +126,10 @@ class Trainer():
     x_val=None,y_val=None,
   ):
     tstart = datetime.now()
-    total_data = x_train.shape[0]
-    cur_stp = self.current_step
     if(type(x_train)!=list):
       x_train = tf.split(x_train,x_train.shape[0],axis=0)
+    total_data = len(x_train)
+    cur_stp = self.current_step
     logger = open(os.path.join(self.logs_path,'result.txt'),'a+',encoding='utf8')
     if(not(self.isdebug)):
       logger.write(datetime.now().strftime("%Y%m%d-%H%M%S")+'\n')

@@ -31,7 +31,7 @@ if __name__ == "__main__":
   parser.add_argument('--debug', help='Set --debug if want to debug.', action="store_true")
   parser.add_argument('--net', help='Choose noework (frcnn/lrcnn).', default="lrcnn")
   parser.add_argument('--name', help='Name of task.')
-  parser.add_argument('--dataset', help='Choose dataset: ctw/svt/ttt.', default="svt")
+  parser.add_argument('--dataset', help='Choose dataset: ctw/svt/ttt.', default="ttt")
   parser.add_argument('--datax', type=int, help='Dataset output width.',default=__DEF_IMG_SIZE[__DEF_INDEX][0])
   parser.add_argument('--datay', type=int, help='Dataset output height.',default=__DEF_IMG_SIZE[__DEF_INDEX][1])
   parser.add_argument('--step', type=int, help='Step size.',default=10)
@@ -50,7 +50,7 @@ if __name__ == "__main__":
   print("\t Use cross: {}.\n".format(args.cross))
 
   isdebug = args.debug
-  # isdebug = True
+  isdebug = True
   opt_schedule = [0.6,0.8]
 
   if(args.opt.lower()=='sgd'):
@@ -100,7 +100,7 @@ if __name__ == "__main__":
     )
   
   if(isdebug):
-    for i in range(10):
+    for i in range(3):
       x_train, y_train = mydatalog.read_train_batch(3)
       sta = trainer.fit(x_train,y_train,model,loss,optimizer)
       if(sta==-1):

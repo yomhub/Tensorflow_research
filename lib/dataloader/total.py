@@ -63,8 +63,9 @@ class TTText():
     dirs = (img_names[slice_a] + img_names[slice_b]) if(slice_b)else img_names[slice_a]
 
     for mdir in dirs:
-      img_list.append(tf.image.resize(
-        tf.image.decode_image(tf.io.read_file(os.path.join(self.xtraindir,mdir))),self.out_size))
+      tmp = tf.image.resize(
+        tf.image.decode_image(tf.io.read_file(os.path.join(self.xtraindir,mdir))),self.out_size)
+      img_list.append(tf.reshape(tmp,[1]+tmp.shape))
       msk_list.append(tf.image.resize(
         tf.image.decode_image(tf.io.read_file(os.path.join(self.ytraindir,mdir))),self.out_size))
 
@@ -84,8 +85,9 @@ class TTText():
     dirs = (img_names[slice_a] + img_names[slice_b]) if(slice_b)else img_names[slice_a]
 
     for mdir in dirs:
-      img_list.append(tf.image.resize(
-        tf.image.decode_image(tf.io.read_file(os.path.join(self.xtestdir,mdir))),self.out_size))
+      tmp = tf.image.resize(
+        tf.image.decode_image(tf.io.read_file(os.path.join(self.xtestdir,mdir))),self.out_size)
+      img_list.append(tf.reshape(tmp,[1]+tmp.shape))
       msk_list.append(tf.image.resize(
         tf.image.decode_image(tf.io.read_file(os.path.join(self.ytestdir,mdir))),self.out_size))
 

@@ -563,15 +563,16 @@ def pre_box_loss_by_det(gt_box, det_map, org_size=None, sigma=1.0, use_cross=Tru
 
   return tf.convert_to_tensor(abs_boundary_det)
 
-def pre_box_loss_by_msk(gt_mask, det_map, org_size, lb_thr=1.0, use_cross=True, mag_f='smooth'):
+def pre_box_loss_by_msk(gt_mask, det_map, org_size, lb_thr=0.2, use_cross=True, mag_f='smooth'):
   """
     Args:
       gt_mask: tensor ((1),hm,wm,(1)) mask.
       det_map: deta in prediction layer 
         tensor ((1),h,w,4) with [dy1, dx1, dy2, dx2]
       org_size: original image size (h,w)
-      b_thr: lower boundary threshold in [0,0.5]
-        
+      lb_thr: lower boundary threshold in [0,0.5]
+        will consider dy1 in [-lb_thr,1-lb_thr] as activate box
+        and dy2 in []
       mag_f: magnification function, can be
         string: 'smooth', apply L1 smooth on loss function 
         string: 'sigmoid', apply sigmoid on loss function 
@@ -581,45 +582,80 @@ def pre_box_loss_by_msk(gt_mask, det_map, org_size, lb_thr=1.0, use_cross=True, 
       loss value
   """
   pred_map = tf.reshape(det_map,det_map.shape[-3:])
+  lb_thr = max(min(lb_thr,0.0),0.5)
   use_cross=False
   # convert gt_mask to 1 or 0
-  gt_mask = tf.cast(tf.cast(gt_mask,tf.bool),tf.int8)
+  gt_mask = tf.cast(tf.cast(gt_mask,tf.bool),tf.int16)
   
   cube_h,cube_w = org_size[0]/pred_map.shape[-3],org_size[1]/pred_map.shape[-2]
-  icube_h,icube_w = int(cube_h),int(cube_w)
+  icube_h,icube_w = int(cube_h), int(cube_w)
+  # icube_up_h,icube_up_w = int(cube_h*lb_thr), int(cube_w*lb_thr)
+  # icube_dw_h,icube_dw_w = icube_h-icube_up_h,icube_w-icube_up_w
+  min_pxls = int(icube_h*icube_w*lb_thr)
   tmp = len(gt_mask.shape)
   if(tmp==3):
-    gt_mask = tf.reshape(gt_mask,[1,]+gt_mask.shape)
+    gt_mask_4d = tf.reshape(gt_mask,[1,]+gt_mask.shape)
+    gt_mask = tf.reshape(gt_mask,gt_mask.shape[0:2])
   elif(tmp==2):
-    gt_mask = tf.reshape(gt_mask,[1,]+gt_mask.shape+[1])
-  gt_mask = tf.image.resize(gt_mask,[int(cube_h)*pred_map.shape[-3],int(cube_w)*pred_map.shape[-2]],'nearest')
-  gt_mask = tf.image.extract_patches(
-    images=gt_mask,
-    sizes=[1,int(cube_h),int(cube_w),1],
-    strides=[1,int(cube_h),int(cube_w),1],
+    gt_mask_4d = tf.reshape(gt_mask,[1,]+gt_mask.shape+[1])
+  gt_mask_4d = tf.image.resize(gt_mask_4d,[int(cube_h)*pred_map.shape[-3],int(cube_w)*pred_map.shape[-2]],'nearest')
+  gt_mask_4d = tf.image.extract_patches(
+    images=gt_mask_4d,
+    sizes=[1,icube_h,icube_w,1],
+    strides=[1,icube_h,icube_w,1],
     rates=[1,1,1,1],
     padding='SAME',
   )
+  int_det_map = tf.round(pred_map)
 
-  int_det_map = tf.reshape(tf.round(det_map),[-1,4])
-  gt_mask = tf.reshape(gt_mask, pred_map.shape[-3:-1]+[int(cube_h),int(cube_w)])
-  ob_gt_mask = tf.reduce_max(gt_mask,axis=[-1,-2])
-  boxs = tf.where(ob_gt_mask>0)
-  box_ind, box_ind_ind = tf.unique(boxs[:,0])
+  # 2D inc method
+  gt_mask_4d = tf.reshape(gt_mask_4d, pred_map.shape[-3:-1]+[icube_h,icube_w])
+  ob_gt_mask = tf.reduce_sum(gt_mask_4d,axis=[-1,-2])
+  boxs_main = tf.where(ob_gt_mask > min_pxls)
+  gt_sub_mask_main = tf.gather_nd(gt_mask_4d,boxs_main)
+  pred_map_select = tf.gather_nd(pred_map,boxs_main)
+  pred_map_select = tf.stack([pred_map_select[:,0]*cube_h,pred_map_select[:,1]*cube_w,pred_map_select[:,2]*cube_h,pred_map_select[:,3]*cube_w],axis=1)
 
-  for ind in box_ind:
-    sub_mask = gt_mask[ind[0]]
-    tmp = tf.where(sub_mask>0)
-    y1 = tf.reduce_min(tmp[:,0])
-    x1 = tf.reduce_min(tmp[:,1])
-    y2 = tf.reduce_max(tmp[:,2])
-    x2 = tf.reduce_max(tmp[:,3])
+  det_cx,det_cy = tf.meshgrid(
+    tf.range(0,pred_map.shape[-2]+2,dtype=tf.float32)*cube_w,
+    tf.range(0,pred_map.shape[-3]+2,dtype=tf.float32)*cube_h)
+
+  pred_mask = np.zeros(gt_mask.shape,dtype=np.int16)
+
+  for i in range(pred_map_select.shape[0]):
+    dy1,dy2 = pred_map_select[i,0::2]
+    dx1,dx2 = pred_map_select[i,1::2]
+    fy,fx = boxs_main[i]
+    dx1,dx2 = dx1+det_cx[fy,fx],dx2+det_cx[fy,fx]
+    dy1,dy2 = dx1+det_cx[fy,fx],dx2+det_cx[fy,fx]
+    dy1,dy2,dx1,dx2 = int(dy1),int(dy2),int(dx1),int(dx2)
+    if(dy1<dy2 and dx1<dx2 and dy1>0 and dx1>0 and dy2<pred_mask.shape[0] and dx2<pred_mask.shape[1]):
+      pred_mask[dy1:dy2,dx1:dx2] = 1
+  gt_mask = gt_mask + pred_mask
+  oara = tf.where(gt_mask==1)
+  iara = tf.where(gt_mask==2)
+  # gt_sub_mask = tf.split(gt_sub_mask,gt_sub_mask.shape[0],axis=0)
+  # gt_sub_cod = tf.where(gt_sub_mask>0)
+  # gt_cod = [tf.where(smask>0) for smask in gt_sub_mask]
+
+  # 1D inc method
+  # gt_mask = tf.reshape(gt_mask, [-1,icube_h,icube_w])
+  # ob_gt_mask = tf.reduce_max(gt_mask,axis=[-1,-2])
+  # pred_map = tf.reshape(pred_map,[-1,4])
+  # boxs = tf.where(ob_gt_mask>0)
+
+  # gt_pred_map = tf.gather(pred_map,boxs[0])
+  # ob_gt_mask = tf.gather(gt_mask,boxs[0])
+  # ob_gt_mask[i] for i in range(boxs.shape[0])
+  # gt_pred_map[i,0],gt_pred_map[i,1]
+  # pixel_gt_msk = []
+
 
   # gt_mask = tf.split(gt_mask,gt_mask.shape[0],axis=0)
   # revert_map[:,(0+dy1):(cube_h-dy2),(0+dx1):(cube_w-dx2)] += 
   # for i in range(len(gt_mask))
   
-  return 0
+  return tf.math.abs(iara.shape[0]-oara.shape[0])
 
   
   
