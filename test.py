@@ -50,9 +50,10 @@ if __name__ == "__main__":
   print("\t Use cross: {}.\n".format(args.cross))
 
   isdebug = args.debug
-  isdebug = True
-  opt_schedule = [0.6,0.8]
-
+  # isdebug = True
+  opt_schedule = np.array([0.6,0.8])*args.batch
+  opt_schedule = opt_schedule.astype(np.int)
+  opt_names = ['sgd']
   if(args.opt.lower()=='sgd'):
     optimizer = tf.keras.optimizers.SGD(learning_rate=args.learnrate)
   else:
@@ -98,7 +99,7 @@ if __name__ == "__main__":
     optimizer=optimizer,
     loss=loss,
     )
-  
+
   if(isdebug):
     for i in range(3):
       x_train, y_train = mydatalog.read_train_batch(3)
@@ -107,6 +108,15 @@ if __name__ == "__main__":
         break
   else:
     islog=False
+    loss.gtformat='xywh'
+    init_data = SVT(__DEF_SVT_DIR,out_size=[args.datay,args.datax])
+    trainer.set_trainer(model=model,loss=loss,opt=optimizer)
+
+    for i in range(3):
+      x_train, y_train = init_data.read_train_batch(3)
+      trainer.fit(x_train,y_train)
+    loss.gtformat='mask'
+    trainer.set_trainer(loss=loss)
     for i in range(args.batch):
       x_train, y_train = mydatalog.read_train_batch(args.step)
       # x_val, y_val = mydatalog.read_test_batch(2)
@@ -119,12 +129,13 @@ if __name__ == "__main__":
       #   trainer.log_image(imgs,10,name="{} training data examples.".format(imgs.shape[0]))
       #   islog=True
         
-      trainer.fit(x_train,y_train,model,loss,optimizer)
+      trainer.fit(x_train,y_train)
       # trainer.evaluate(x_val,y_val)
         # trainer.evaluate(x_train[0:2],y_val[0:2])
-      # if(i==int(args.batch/2)):
-      #   optimizer = tf.keras.optimizers.SGD(learning_rate=args.learnrate)
-      #   trainer.set_trainer(opt=optimizer)
+      # inc = np.where(opt_schedule==i)
+      if(i==4):
+        optimizer = tf.keras.optimizers.SGD(learning_rate=args.learnrate)
+        trainer.set_trainer(opt=optimizer)
       # if(i%10==0):
       #   trainer.set_trainer(data_count=mydatalog._init_conter)
       #   trainer.save()

@@ -563,12 +563,12 @@ def pre_box_loss_by_det(gt_box, det_map, org_size=None, sigma=1.0, use_cross=Tru
 
   return tf.convert_to_tensor(abs_boundary_det)
 
-def pre_box_loss_by_msk(gt_mask, det_map, org_size, lb_thr=0.2, use_cross=True, mag_f='smooth'):
+def pre_box_loss_by_msk(gt_mask, det_map, score_map, org_size, lb_thr=0.2, use_cross=True, mag_f='smooth'):
   """
     Args:
       gt_mask: tensor ((1),hm,wm,(1)) mask.
-      det_map: deta in prediction layer 
-        tensor ((1),h,w,4) with [dy1, dx1, dy2, dx2]
+      det_map: deta value tensor ((1),h,w,4) with [dy1, dx1, dy2, dx2]
+      score_map: scores value tensor ((1),h,w,num_class)
       org_size: original image size (h,w)
       lb_thr: lower boundary threshold in [0,0.5]
         will consider dy1 in [-lb_thr,1-lb_thr] as activate box
@@ -581,11 +581,14 @@ def pre_box_loss_by_msk(gt_mask, det_map, org_size, lb_thr=0.2, use_cross=True, 
     Return:
       loss value
   """
+  num_class = score_map.shape[-1] - 1
   pred_map = tf.reshape(det_map,det_map.shape[-3:])
   lb_thr = max(min(lb_thr,0.0),0.5)
   use_cross=False
   # convert gt_mask to 1 or 0
-  gt_mask = tf.cast(tf.cast(gt_mask,tf.bool),tf.int16)
+  gt_mask = tf.cast(gt_mask,tf.int32)
+  gt_mask = tf.where(gt_mask>num_class,num_class,gt_mask)
+  # gt_mask = tf.cast(tf.cast(gt_mask,tf.bool),tf.int32)
   
   cube_h,cube_w = org_size[0]/pred_map.shape[-3],org_size[1]/pred_map.shape[-2]
   icube_h,icube_w = int(cube_h), int(cube_w)
@@ -606,10 +609,12 @@ def pre_box_loss_by_msk(gt_mask, det_map, org_size, lb_thr=0.2, use_cross=True, 
     rates=[1,1,1,1],
     padding='SAME',
   )
-  int_det_map = tf.round(pred_map)
 
   # 2D inc method
   gt_mask_4d = tf.reshape(gt_mask_4d, pred_map.shape[-3:-1]+[icube_h,icube_w])
+  label_loss = tf.nn.sparse_softmax_cross_entropy_with_logits(
+    logits=tf.reshape(score_map,[-1,score_map.shape[-1]]), 
+    labels=tf.reshape(tf.reduce_max(gt_mask_4d,axis=[-1,-2]),[-1]))
   ob_gt_mask = tf.reduce_sum(gt_mask_4d,axis=[-1,-2])
   boxs_main = tf.where(ob_gt_mask > min_pxls)
   gt_sub_mask_main = tf.gather_nd(gt_mask_4d,boxs_main)
@@ -620,7 +625,7 @@ def pre_box_loss_by_msk(gt_mask, det_map, org_size, lb_thr=0.2, use_cross=True, 
     tf.range(0,pred_map.shape[-2]+2,dtype=tf.float32)*cube_w,
     tf.range(0,pred_map.shape[-3]+2,dtype=tf.float32)*cube_h)
 
-  pred_mask = np.zeros(gt_mask.shape,dtype=np.int16)
+  pred_mask = np.zeros(gt_mask.shape,dtype=np.int32)
 
   for i in range(pred_map_select.shape[0]):
     dy1,dy2 = pred_map_select[i,0::2]
@@ -655,7 +660,7 @@ def pre_box_loss_by_msk(gt_mask, det_map, org_size, lb_thr=0.2, use_cross=True, 
   # revert_map[:,(0+dy1):(cube_h-dy2),(0+dx1):(cube_w-dx2)] += 
   # for i in range(len(gt_mask))
   
-  return tf.math.abs(iara.shape[0]-oara.shape[0])
+  return tf.cast(tf.math.abs(iara.shape[0]-oara.shape[0]),tf.float32),tf.reduce_mean(label_loss)
 
   
   

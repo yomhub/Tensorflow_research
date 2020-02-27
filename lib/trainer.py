@@ -137,33 +137,28 @@ class Trainer():
       y_train = [y_train]
     assert(total_data==len(y_train))
 
-    if(model!=None):
-      self.model = model
-    else:
-      if(self.model!=None):
-        model = self.model
+    if(self.model==None):
+      if(model!=None):
+        self.model = model
       else:
-        return
+        return -1
 
-    if(loss!=None):
-      self.loss = loss
-    else:
-      if(self.loss!=None):
-        loss = self.loss
+    if(self.loss==None):
+      if(loss!=None):
+        self.loss = loss
       else:
-        return
+        return -1
 
-    if(opt!=None):
-      self.opt = opt
-    else:
-      if(self.opt!=None):
-        opt = self.opt
+    if(self.opt==None):
+      if(opt!=None):
+        self.opt = opt
       else:
-        return
+        return -1
+
     try:
-      type(model.trainable_variables)
+      type(self.model.trainable_variables)
     except:
-      model(tf.zeros([1,]+x_train[0].shape[1:],dtype=tf.float32))
+      self.model(tf.zeros([1,]+x_train[0].shape[1:],dtype=tf.float32))
 
     for step in range(total_data):
       if(x_train[step].dtype!=tf.float32 or x_train[step].dtype!=tf.float64):
@@ -173,6 +168,7 @@ class Trainer():
       if(ret==-1):
         logger.close()
         return ret
+        
     self.batch_callback(total_data,logger,datetime.now() - tstart)
     self.current_step = cur_stp
     self.batch += 1

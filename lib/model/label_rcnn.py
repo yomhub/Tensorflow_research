@@ -269,16 +269,20 @@ class LRCNNLoss(tf.keras.losses.Loss):
       labels = tf.gather(labels,select)
       loss = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=score, labels=labels)
     return tf.reduce_mean(loss)
-    
+
   def _boxes_loss(self,box_prd,y_true):
-    if(self.gtformat=='mask'):
-      loss_value = pre_box_loss_by_msk(y_true,box_prd,self.imge_size)
-    else:
-      loss_value = pre_box_loss_by_det(y_true,box_prd,self.imge_size,use_cross=self.use_cross,mag_f=self.mag_f)
+
+    loss_value = pre_box_loss_by_det(y_true,box_prd,self.imge_size,use_cross=self.use_cross,mag_f=self.mag_f)
     # loss_value = pre_box_loss(y_true,box_prd,self.imge_size)
     # loss_value = loss_value / tf.math.reduce_sum((y_true[:,2]-y_true[:,0])*(y_true[:,3]-y_true[:,1]))
-      loss_value = tf.math.reduce_mean(loss_value)
+    loss_value = tf.math.reduce_mean(loss_value)
+
     return loss_value
+
+  def _boxes_label_loss(self,box_prd,pred_score,y_true):
+    # ONLY for mask gt
+    box_loss,label_loss = pre_box_loss_by_msk(y_true,box_prd,pred_score,self.imge_size)
+    return box_loss,label_loss
 
   def call(self, y_true, y_pred):
     if(self.gtformat=='xywh'):
@@ -288,11 +292,9 @@ class LRCNNLoss(tf.keras.losses.Loss):
       gt_area_w = tf.reshape(y_true[:,-2],[-1])
       gt_boxes = xywh2yxyx(y_true[:,1:])
       y_true = tf.stack([y_true[:,0],gt_boxes[:,0],gt_boxes[:,1],gt_boxes[:,2],gt_boxes[:,3]],axis=1)
-      y_true_bx = y_true[:,-4:]
     else:
       gt_area_h = tf.reshape(y_true[:,-2]-y_true[:,-4],[-1])
       gt_area_w = tf.reshape(y_true[:,-1]-y_true[:,-3],[-1])
-      y_true_bx = y_true
 
     # gt_area = gt_area_h*gt_area_w
     # l3_y = tf.gather(y_true,tf.reshape(tf.where(gt_area>=32.0*32.0),[-1]))
@@ -300,24 +302,30 @@ class LRCNNLoss(tf.keras.losses.Loss):
     #   l3_box_loss = self._boxes_loss(y_pred["l3_bbox"],l3_y[:,-4:])
     # else:
     #   l3_box_loss = 0.0
-    l3_box_loss = self._boxes_loss(y_pred["l3_bbox_det"],y_true_bx)
-    l3_label_loss = self._label_loss(y_pred["l3_score"],y_true)
-
+    if(self.gtformat!='mask'):
+      l3_box_loss = self._boxes_loss(y_pred["l3_bbox_det"],y_true[:,-4:])
+      l2_box_loss = self._boxes_loss(y_pred["l2_bbox_det"],y_true[:,-4:])
+      l1_box_loss = self._boxes_loss(y_pred["l1_bbox_det"],y_true[:,-4:])
+      l3_label_loss = self._label_loss(y_pred["l3_score"],y_true)
+      l2_label_loss = self._label_loss(y_pred["l2_score"],y_true)
+      l1_label_loss = self._label_loss(y_pred["l1_score"],y_true)
+    else:
+      l3_box_loss,l3_label_loss = self._boxes_label_loss(y_pred["l3_bbox_det"],y_pred["l3_score"],y_true)
+      l2_box_loss,l2_label_loss = self._boxes_label_loss(y_pred["l2_bbox_det"],y_pred["l2_score"],y_true)
+      l1_box_loss,l1_label_loss = self._boxes_label_loss(y_pred["l1_bbox_det"],y_pred["l1_score"],y_true)
     # l2_y = tf.gather(y_true,tf.reshape(tf.where(tf.logical_and(gt_area>=16.0*16.0,gt_area<32.0*32.0)),[-1]))
     # if(l2_y.shape[0]!=None and l2_y.shape[0]>0):
     #   l2_box_loss = self._boxes_loss(y_pred["l2_bbox"],l2_y[:,-4:])
     # else:
     #   l2_box_loss = 0.0
-    l2_box_loss = self._boxes_loss(y_pred["l2_bbox_det"],y_true_bx)
-    l2_label_loss = self._label_loss(y_pred["l2_score"],y_true)
+
 
     # l1_y = tf.gather(y_true,tf.reshape(tf.where(gt_area<16.0*16.0),[-1]))
     # if(l1_y.shape[0]!=None and l1_y.shape[0]>0):
     #   l1_box_loss = self._boxes_loss(y_pred["l1_bbox"],l1_y[:,-4:])
     # else:
     #   l1_box_loss = 0.0
-    l1_box_loss = self._boxes_loss(y_pred["l1_bbox_det"],y_true_bx)
-    l1_label_loss = self._label_loss(y_pred["l1_score"],y_true)
+
 
     self.loss_detail={
       "l1_label_loss" : l1_label_loss,
