@@ -563,7 +563,7 @@ def pre_box_loss_by_det(gt_box, det_map, org_size=None, sigma=1.0, use_cross=Tru
 
   return tf.convert_to_tensor(abs_boundary_det)
 
-def pre_box_loss_by_msk(gt_mask, det_map, score_map, org_size, lb_thr=0.2, use_cross=True, mag_f='smooth'):
+def pre_box_loss_by_msk(gt_mask, det_map, score_map, org_size, lb_thr=0.2, use_cross=True, use_pixel=True, mag_f='smooth', sigma=1.0):
   """
     Args:
       gt_mask: tensor ((1),hm,wm,(1)) mask.
@@ -571,9 +571,11 @@ def pre_box_loss_by_msk(gt_mask, det_map, score_map, org_size, lb_thr=0.2, use_c
       score_map: scores value tensor ((1),h,w,num_class)
       org_size: original image size (h,w)
       lb_thr: lower boundary threshold in [0,0.5]
-        will consider dy1 in [-lb_thr,1-lb_thr] as activate box
-        and dy2 in []
-      mag_f: magnification function, can be
+        calculate box with positive pixels higher than wh*wx*lb_thr
+      use_pixel: 
+        True: return pixel loss
+        False: return box loss
+      mag_f: (in box loss ONLY) magnification function, can be
         string: 'smooth', apply L1 smooth on loss function 
         string: 'sigmoid', apply sigmoid on loss function 
         tf.keras.layers.Lambda: apply input Lambda object
@@ -583,18 +585,16 @@ def pre_box_loss_by_msk(gt_mask, det_map, score_map, org_size, lb_thr=0.2, use_c
   """
   num_class = score_map.shape[-1] - 1
   pred_map = tf.reshape(det_map,det_map.shape[-3:])
-  lb_thr = max(min(lb_thr,0.0),0.5)
-  use_cross=False
-  # convert gt_mask to 1 or 0
+  lb_thr = min(max(lb_thr,0.0),0.5)
+  # convert gt_mask to [0,num_class-1]
   gt_mask = tf.cast(gt_mask,tf.int32)
   gt_mask = tf.where(gt_mask>num_class,num_class,gt_mask)
-  # gt_mask = tf.cast(tf.cast(gt_mask,tf.bool),tf.int32)
   
   cube_h,cube_w = org_size[0]/pred_map.shape[-3],org_size[1]/pred_map.shape[-2]
   icube_h,icube_w = int(cube_h), int(cube_w)
-  # icube_up_h,icube_up_w = int(cube_h*lb_thr), int(cube_w*lb_thr)
-  # icube_dw_h,icube_dw_w = icube_h-icube_up_h,icube_w-icube_up_w
   min_pxls = int(icube_h*icube_w*lb_thr)
+  # select all boxes VS boundary boxes
+  max_pxls = int(icube_h*icube_w) if use_pixel else int(icube_h*icube_w)-min_pxls
   tmp = len(gt_mask.shape)
   if(tmp==3):
     gt_mask_4d = tf.reshape(gt_mask,[1,]+gt_mask.shape)
@@ -612,55 +612,82 @@ def pre_box_loss_by_msk(gt_mask, det_map, score_map, org_size, lb_thr=0.2, use_c
 
   # 2D inc method
   gt_mask_4d = tf.reshape(gt_mask_4d, pred_map.shape[-3:-1]+[icube_h,icube_w])
-  label_loss = tf.nn.sparse_softmax_cross_entropy_with_logits(
-    logits=tf.reshape(score_map,[-1,score_map.shape[-1]]), 
-    labels=tf.reshape(tf.reduce_max(gt_mask_4d,axis=[-1,-2]),[-1]))
-  ob_gt_mask = tf.reduce_sum(gt_mask_4d,axis=[-1,-2])
-  boxs_main = tf.where(ob_gt_mask > min_pxls)
-  gt_sub_mask_main = tf.gather_nd(gt_mask_4d,boxs_main)
+  gt_mask_4d_b = tf.cast(tf.cast(gt_mask_4d,tf.bool),tf.int32)
+  ob_gt_mask = tf.reduce_sum(gt_mask_4d_b,axis=[-1,-2])
+  boxs_main = tf.where(tf.math.logical_and(ob_gt_mask >= min_pxls, ob_gt_mask <= max_pxls))
   pred_map_select = tf.gather_nd(pred_map,boxs_main)
-  pred_map_select = tf.stack([pred_map_select[:,0]*cube_h,pred_map_select[:,1]*cube_w,pred_map_select[:,2]*cube_h,pred_map_select[:,3]*cube_w],axis=1)
+  # label loss
+  tmp = tf.reduce_max(gt_mask_4d,axis=[-1,-2]).numpy()
+  tmp[ob_gt_mask<min_pxls]=0
+  label_loss = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(
+    logits=tf.reshape(score_map,[-1,score_map.shape[-1]]), 
+    labels=tf.reshape(tmp,[-1])))
+  if(use_pixel):
+    # pixel level difference
+    pred_mask = np.zeros(gt_mask.shape,dtype=np.int32)
+    det_cx,det_cy = tf.meshgrid(
+      tf.range(0,pred_map.shape[-2]+2,dtype=tf.float32)*cube_w,
+      tf.range(0,pred_map.shape[-3]+2,dtype=tf.float32)*cube_h)
+    
+    pred_map_select = tf.stack([pred_map_select[:,0]*cube_h,pred_map_select[:,1]*cube_w,pred_map_select[:,2]*cube_h,pred_map_select[:,3]*cube_w],axis=1)
+    for i in range(boxs_main.shape[0]):
+      dy1,dy2 = pred_map_select[i,0::2]
+      dx1,dx2 = pred_map_select[i,1::2]
+      fy,fx = boxs_main[i]
+      dx1,dx2 = int(dx1+det_cx[fy,fx]),int(dx2+det_cx[fy,fx])
+      dy1,dy2 = int(dy1+det_cy[fy,fx]),int(dy2+det_cy[fy,fx])
+      if(dy1<dy2 and dx1<dx2 and dy1>0 and dx1>0 and dy2<pred_mask.shape[0] and dx2<pred_mask.shape[1]):
+        pred_mask[dy1:dy2,dx1:dx2] = 1
+    gt_mask = gt_mask + pred_mask
+    oara = tf.where(gt_mask==1)
+    iara = tf.where(gt_mask==2)
+    bxloss = tf.cast(tf.math.abs(iara.shape[0]-oara.shape[0]),tf.float32)
+  else:
+    # coordinate difference
+    if(type(mag_f)==str):
+      mag_f = mag_f.lower()
+      if(mag_f=='tanh'):
+        mag_f = tf.keras.layers.Lambda(lambda x: tf.math.sigmoid(x))
+      elif(mag_f=='smooth'):
+        sigma_2 = sigma**2
+        mag_f = tf.keras.layers.Lambda(lambda x: tf.where(x > (1. / x),x - (0.5 / sigma_2),tf.pow(x, 2) * (sigma_2 / 2.)))
+      else:
+        mag_f = tf.keras.layers.Lambda(lambda x:x)
+    elif(mag_f == None):
+      mag_f = tf.keras.layers.Lambda(lambda x:x)
+    bxloss = 0.0
+    gt_mask_4d = tf.gather_nd(gt_mask_4d,boxs_main)
+    pos_ins = tf.where(gt_mask_4d>0)
+    ymin,xmin = int(icube_h*lb_thr),int(icube_w*lb_thr)
+    ymax,xmax = icube_h-ymin,icube_w-xmin
+    for i in range(boxs_main.shape[0]):
+      dy1,dy2 = pred_map_select[i,0::2]
+      dx1,dx2 = pred_map_select[i,1::2]
+      fy,fx = boxs_main[i]
+      my2,mx2 = tf.reduce_max(pos_ins[pos_ins[:,0]==i][:,1:3],axis=0)+1
+      my1,mx1 = tf.reduce_min(pos_ins[pos_ins[:,0]==i][:,1:3],axis=0)+1
+      dfy,dfx = 0,0
+      if(my2<ymin):dfy=-1
+      elif(my1>ymax):dfy=1
+      if(mx2<xmin):dfx=-1
+      elif(mx1>xmax):dfx=1
 
-  det_cx,det_cy = tf.meshgrid(
-    tf.range(0,pred_map.shape[-2]+2,dtype=tf.float32)*cube_w,
-    tf.range(0,pred_map.shape[-3]+2,dtype=tf.float32)*cube_h)
-
-  pred_mask = np.zeros(gt_mask.shape,dtype=np.int32)
-
-  for i in range(pred_map_select.shape[0]):
-    dy1,dy2 = pred_map_select[i,0::2]
-    dx1,dx2 = pred_map_select[i,1::2]
-    fy,fx = boxs_main[i]
-    dx1,dx2 = dx1+det_cx[fy,fx],dx2+det_cx[fy,fx]
-    dy1,dy2 = dx1+det_cx[fy,fx],dx2+det_cx[fy,fx]
-    dy1,dy2,dx1,dx2 = int(dy1),int(dy2),int(dx1),int(dx2)
-    if(dy1<dy2 and dx1<dx2 and dy1>0 and dx1>0 and dy2<pred_mask.shape[0] and dx2<pred_mask.shape[1]):
-      pred_mask[dy1:dy2,dx1:dx2] = 1
-  gt_mask = gt_mask + pred_mask
-  oara = tf.where(gt_mask==1)
-  iara = tf.where(gt_mask==2)
-  # gt_sub_mask = tf.split(gt_sub_mask,gt_sub_mask.shape[0],axis=0)
-  # gt_sub_cod = tf.where(gt_sub_mask>0)
-  # gt_cod = [tf.where(smask>0) for smask in gt_sub_mask]
-
-  # 1D inc method
-  # gt_mask = tf.reshape(gt_mask, [-1,icube_h,icube_w])
-  # ob_gt_mask = tf.reduce_max(gt_mask,axis=[-1,-2])
-  # pred_map = tf.reshape(pred_map,[-1,4])
-  # boxs = tf.where(ob_gt_mask>0)
-
-  # gt_pred_map = tf.gather(pred_map,boxs[0])
-  # ob_gt_mask = tf.gather(gt_mask,boxs[0])
-  # ob_gt_mask[i] for i in range(boxs.shape[0])
-  # gt_pred_map[i,0],gt_pred_map[i,1]
-  # pixel_gt_msk = []
-
-
-  # gt_mask = tf.split(gt_mask,gt_mask.shape[0],axis=0)
-  # revert_map[:,(0+dy1):(cube_h-dy2),(0+dx1):(cube_w-dx2)] += 
-  # for i in range(len(gt_mask))
-  
-  return tf.cast(tf.math.abs(iara.shape[0]-oara.shape[0]),tf.float32),tf.reduce_mean(label_loss)
+      if(dfy==0 and dfx==0):
+        my2,my1 = float((icube_h-my2)/icube_h),float(my1/icube_h)
+        mx2,mx1 = float((icube_w-mx2)/icube_w),float(mx1/icube_w)
+        if(my1>0):bxloss += mag_f(tf.math.abs(pred_map[fy,fx,0]-my1))
+        if(my2>0):bxloss += mag_f(tf.math.abs(pred_map[fy,fx,2]+my2)) # pdx2 should be negative
+        if(mx1>0):bxloss += mag_f(tf.math.abs(pred_map[fy,fx,1]-mx1))
+        if(mx2>0):bxloss += mag_f(tf.math.abs(pred_map[fy,fx,3]+mx2))
+      else:
+        fy+=dfy
+        fx+=dfx
+        if(dfy>0):bxloss += mag_f(tf.math.abs(pred_map[fy,fx,0]+(icube_h-my1)/icube_h))
+        elif(dfy<0):bxloss += mag_f(tf.math.abs(pred_map[fy,fx,2]-my2/icube_h))
+        if(dfx>0):bxloss += mag_f(tf.math.abs(pred_map[fy,fx,1]+(icube_w-mx1)/icube_w))
+        elif(dfx<0):bxloss += mag_f(tf.math.abs(pred_map[fy,fx,3]-mx2/icube_w))
+    bxloss /= boxs_main.shape[0]
+  return bxloss,label_loss
 
   
   

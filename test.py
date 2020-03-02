@@ -108,15 +108,16 @@ if __name__ == "__main__":
         break
   else:
     islog=False
-    loss.gtformat='xywh'
-    init_data = SVT(__DEF_SVT_DIR,out_size=[args.datay,args.datax])
+    # loss.gtformat='xywh'
+    # init_data = SVT(__DEF_SVT_DIR,out_size=[args.datay,args.datax])
     trainer.set_trainer(model=model,loss=loss,opt=optimizer)
 
-    for i in range(3):
-      x_train, y_train = init_data.read_train_batch(3)
-      trainer.fit(x_train,y_train)
-    loss.gtformat='mask'
-    trainer.set_trainer(loss=loss)
+    # for i in range(3):
+    #   x_train, y_train = init_data.read_train_batch(3)
+    #   trainer.fit(x_train,y_train)
+    # loss.gtformat='mask'
+    # optimizer = tf.keras.optimizers.Adam(learning_rate=args.learnrate)
+    # trainer.set_trainer(loss=loss,opt=optimizer)
     for i in range(args.batch):
       x_train, y_train = mydatalog.read_train_batch(args.step)
       # x_val, y_val = mydatalog.read_test_batch(2)

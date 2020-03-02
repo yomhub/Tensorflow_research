@@ -3,7 +3,7 @@ import tensorflow as tf
 import numpy as np
 import argparse
 # from mydataset.ctw import CTW
-from mydataset.svt import SVT
+from lib.dataloader.svt import SVT
 from lib.model.config import cfg
 from lib.model.label_rcnn import Label_RCNN, LRCNNLoss
 from lib.frcnn_trainer import FRCNNTrainer
@@ -60,5 +60,5 @@ if __name__ == "__main__":
   model = Label_RCNN()
   model(tf.zeros((1,360,640,3)))
   pred = model(x_train[0])
-  ret = pre_box_loss_by_msk(gt_mask=y_train[0],det_map=pred["l1_bbox_det"],org_size=[360,640])
-  print()
+  ret = pre_box_loss_by_msk(gt_mask=y_train[0],det_map=pred["l1_bbox_det"],score_map=pred["l1_score"],org_size=[360,640],use_pixel=False)
+  print('end\n')
