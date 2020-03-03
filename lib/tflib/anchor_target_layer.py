@@ -1,7 +1,7 @@
 import tensorflow as tf
 import numpy as np
 from tflib.bbox_transform import bbox_transform, clip_boxes_tf, map2coordinate
-from tflib.img_tools import overlap_tf, check_inside
+from tflib.evaluate_tools import overlap_tf, check_inside
 
 def anchor_target_layer_tf(all_anchors, gt_boxes, im_info, settings):
   """

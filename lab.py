@@ -56,9 +56,12 @@ def plt_demo():
 
 if __name__ == "__main__":
   mydatalog = TTText(__DEF_TTT_DIR,out_size=[360,640])
-  x_train, y_train = mydatalog.read_train_batch(1)
+  x_train, y_train = mydatalog.read_train_batch(10)
   model = Label_RCNN()
   model(tf.zeros((1,360,640,3)))
   pred = model(x_train[0])
-  ret = pre_box_loss_by_msk(gt_mask=y_train[0],det_map=pred["l1_bbox_det"],score_map=pred["l1_score"],org_size=[360,640],use_pixel=False)
+  for i in range(len(y_train)):
+    ret = pre_box_loss_by_msk(gt_mask=y_train[i],det_map=pred["l1_bbox_det"],score_map=pred["l1_score"],org_size=[360,640],use_pixel=False)
+    ret = pre_box_loss_by_msk(gt_mask=y_train[i],det_map=pred["l2_bbox_det"],score_map=pred["l2_score"],org_size=[360,640],use_pixel=False)
+    ret = pre_box_loss_by_msk(gt_mask=y_train[i],det_map=pred["l3_bbox_det"],score_map=pred["l3_score"],org_size=[360,640],use_pixel=False)
   print('end\n')

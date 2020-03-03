@@ -3,7 +3,7 @@ import tensorflow as tf
 import numpy as np
 import numpy.random as npr
 from tflib.bbox_transform import bbox_transform
-from tflib.img_tools import overlap_tf
+from tflib.evaluate_tools import overlap_tf
 
 def proposal_target_layer_tf(rpn_rois, rpn_scores, rcnn_rois, rcnn_scores, gt_boxes, num_classes, settings):
   """

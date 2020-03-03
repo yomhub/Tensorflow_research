@@ -281,7 +281,7 @@ class LRCNNLoss(tf.keras.losses.Loss):
 
   def _boxes_label_loss(self,box_prd,pred_score,y_true):
     # ONLY for mask gt
-    box_loss,label_loss = pre_box_loss_by_msk(y_true,box_prd,pred_score,self.imge_size)
+    box_loss,label_loss = pre_box_loss_by_msk(y_true,box_prd,pred_score,self.imge_size,use_pixel=False)
     return box_loss,label_loss
 
   def call(self, y_true, y_pred):

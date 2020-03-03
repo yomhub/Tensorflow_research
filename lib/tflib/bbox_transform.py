@@ -592,7 +592,8 @@ def pre_box_loss_by_msk(gt_mask, det_map, score_map, org_size, lb_thr=0.2, use_c
   
   cube_h,cube_w = org_size[0]/pred_map.shape[-3],org_size[1]/pred_map.shape[-2]
   icube_h,icube_w = int(cube_h), int(cube_w)
-  min_pxls = int(icube_h*icube_w*lb_thr)
+  min_pxls = int((icube_h*icube_w)*lb_thr)
+  # min_pxls = min(int(icube_w*lb_thr),int(icube_h*lb_thr))
   # select all boxes VS boundary boxes
   max_pxls = int(icube_h*icube_w) if use_pixel else int(icube_h*icube_w)-min_pxls
   tmp = len(gt_mask.shape)
@@ -601,7 +602,8 @@ def pre_box_loss_by_msk(gt_mask, det_map, score_map, org_size, lb_thr=0.2, use_c
     gt_mask = tf.reshape(gt_mask,gt_mask.shape[0:2])
   elif(tmp==2):
     gt_mask_4d = tf.reshape(gt_mask,[1,]+gt_mask.shape+[1])
-  gt_mask_4d = tf.image.resize(gt_mask_4d,[int(cube_h)*pred_map.shape[-3],int(cube_w)*pred_map.shape[-2]],'nearest')
+  else:gt_mask_4d = gt_mask
+  gt_mask_4d = tf.image.resize(gt_mask_4d,[icube_h*pred_map.shape[-3],icube_w*pred_map.shape[-2]],'nearest')
   gt_mask_4d = tf.image.extract_patches(
     images=gt_mask_4d,
     sizes=[1,icube_h,icube_w,1],
@@ -618,7 +620,8 @@ def pre_box_loss_by_msk(gt_mask, det_map, score_map, org_size, lb_thr=0.2, use_c
   pred_map_select = tf.gather_nd(pred_map,boxs_main)
   # label loss
   tmp = tf.reduce_max(gt_mask_4d,axis=[-1,-2]).numpy()
-  tmp[ob_gt_mask<min_pxls]=0
+  # sometimes [ob_gt_mask<min_pxls] will got error
+  tmp[(ob_gt_mask<min_pxls).numpy()]=0
   label_loss = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(
     logits=tf.reshape(score_map,[-1,score_map.shape[-1]]), 
     labels=tf.reshape(tmp,[-1])))
@@ -660,7 +663,10 @@ def pre_box_loss_by_msk(gt_mask, det_map, score_map, org_size, lb_thr=0.2, use_c
     pos_ins = tf.where(gt_mask_4d>0)
     ymin,xmin = int(icube_h*lb_thr),int(icube_w*lb_thr)
     ymax,xmax = icube_h-ymin,icube_w-xmin
+    cnt = 0
+    hit = False
     for i in range(boxs_main.shape[0]):
+      hit = False
       dy1,dy2 = pred_map_select[i,0::2]
       dx1,dx2 = pred_map_select[i,1::2]
       fy,fx = boxs_main[i]
@@ -675,19 +681,74 @@ def pre_box_loss_by_msk(gt_mask, det_map, score_map, org_size, lb_thr=0.2, use_c
       if(dfy==0 and dfx==0):
         my2,my1 = float((icube_h-my2)/icube_h),float(my1/icube_h)
         mx2,mx1 = float((icube_w-mx2)/icube_w),float(mx1/icube_w)
-        if(my1>0):bxloss += mag_f(tf.math.abs(pred_map[fy,fx,0]-my1))
-        if(my2>0):bxloss += mag_f(tf.math.abs(pred_map[fy,fx,2]+my2)) # pdx2 should be negative
-        if(mx1>0):bxloss += mag_f(tf.math.abs(pred_map[fy,fx,1]-mx1))
-        if(mx2>0):bxloss += mag_f(tf.math.abs(pred_map[fy,fx,3]+mx2))
+        if(my1>0):
+          bxloss += mag_f(tf.math.abs(pred_map[fy,fx,0]-my1))
+          hit=True
+        if(my2>0):
+          bxloss += mag_f(tf.math.abs(pred_map[fy,fx,2]+my2)) # pdx2 should be negative
+          hit=True
+        if(mx1>0):
+          bxloss += mag_f(tf.math.abs(pred_map[fy,fx,1]-mx1))
+          hit=True
+        if(mx2>0):
+          bxloss += mag_f(tf.math.abs(pred_map[fy,fx,3]+mx2))
+          hit=True
       else:
         fy+=dfy
         fx+=dfx
-        if(dfy>0):bxloss += mag_f(tf.math.abs(pred_map[fy,fx,0]+(icube_h-my1)/icube_h))
-        elif(dfy<0):bxloss += mag_f(tf.math.abs(pred_map[fy,fx,2]-my2/icube_h))
-        if(dfx>0):bxloss += mag_f(tf.math.abs(pred_map[fy,fx,1]+(icube_w-mx1)/icube_w))
-        elif(dfx<0):bxloss += mag_f(tf.math.abs(pred_map[fy,fx,3]-mx2/icube_w))
+        if(dfy>0):
+          bxloss += mag_f(tf.math.abs(pred_map[fy,fx,0]+float((icube_h-my1)/icube_h)))
+          hit=True
+        elif(dfy<0):
+          bxloss += mag_f(tf.math.abs(pred_map[fy,fx,2]-float(my2/icube_h)))
+          hit=True
+        if(dfx>0):
+          bxloss += mag_f(tf.math.abs(pred_map[fy,fx,1]+float((icube_w-mx1)/icube_w)))
+          hit=True
+        elif(dfx<0):
+          bxloss += mag_f(tf.math.abs(pred_map[fy,fx,3]-float(mx2/icube_w)))
+          hit=True
+      if(hit):cnt+=1
     bxloss /= boxs_main.shape[0]
   return bxloss,label_loss
 
-  
-  
+def gen_gt_from_msk(gt_mask,dst_size,num_class,lb_thr=0.2):
+  """
+    Generate gt from original mask.
+    Args:
+      gt_mask: tensor ((1),hm,wm,(1)) mask.
+      dst_size: destination image size (h,w).
+      lb_thr: lower boundary threshold in [0,0.5]
+        calculate box with positive pixels higher than wh*wx*lb_thr
+      num_class: number of class, include bg class
+    Return:
+      binary map in [0,numclass-1] with shape=dst_size, int32
+  """
+  num_class-=1
+  gt_mask = tf.cast(gt_mask,tf.int32)
+  gt_mask = tf.where(gt_mask>num_class,num_class,gt_mask)
+  tmp = len(gt_mask.shape)
+  if(tmp==3):gt_mask = tf.reshape(gt_mask,[1,]+gt_mask.shape)
+  elif(tmp==2):gt_mask = tf.reshape(gt_mask,[1,]+gt_mask.shape+[1])
+  else:gt_mask = gt_mask
+
+  cube_h,cube_w = gt_mask.shape[-3]/dst_size[0],gt_mask.shape[-2]/dst_size[1]
+  icube_h,icube_w = int(cube_h), int(cube_w)
+  min_pxls = int((icube_h*icube_w)*lb_thr)
+  if(icube_h==1 and icube_w==1):return gt_mask
+
+  gt_mask = tf.image.resize(gt_mask,[icube_h*dst_size[0],icube_w*dst_size[1]],'nearest')
+  gt_mask = tf.image.extract_patches(
+    images=gt_mask,
+    sizes=[1,icube_h,icube_w,1],
+    strides=[1,icube_h,icube_w,1],
+    rates=[1,1,1,1],
+    padding='SAME',
+  )
+  gt_mask = tf.reshape(gt_mask,gt_mask.shape[-3:])
+  gt_mask_b = tf.cast(tf.cast(gt_mask,tf.bool),tf.int32)
+  gt_mask_b = tf.reduce_sum(gt_mask_b,axis=-1)
+  gt_mask = tf.reduce_max(gt_mask,axis=-1).numpy()
+  gt_mask[(gt_mask_b<min_pxls).numpy()]=0
+
+  return gt_mask

@@ -87,7 +87,9 @@ class Trainer():
 
   def evaluate(self,x_val,y_val,model=None):
     tstart = datetime.now()
-    total_data = x_val.shape[0]
+    if(type(x_val)!=list):
+      x_val = tf.split(x_val,x_val.shape[0],axis=0)
+    total_data = len(x_val)
     
     if(type(y_val)!=list):
       y_val=[y_val]
@@ -103,9 +105,7 @@ class Trainer():
         model = self.model
       else:
         return
-    
-    if(type(x_val)!=list):
-      x_val = tf.split(x_val,total_data,axis=0)
+  
     cur_stp = self.eva_step
     for step in range(total_data):
       if(x_val[step].dtype!=tf.float32 or x_val[step].dtype!=tf.float64):

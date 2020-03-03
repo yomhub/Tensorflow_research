@@ -29,6 +29,7 @@ if __name__ == "__main__":
   parser.add_argument('--proposal', help='Choose proposal in nms and top_k.',default='top_k')
   parser.add_argument('--opt', help='Choose optimizer in sgd and adam.',default='adam')
   parser.add_argument('--debug', help='Set --debug if want to debug.', action="store_true")
+  parser.add_argument('--save', help='Set --save if want to save network.', action="store_true")
   parser.add_argument('--net', help='Choose noework (frcnn/lrcnn).', default="lrcnn")
   parser.add_argument('--name', help='Name of task.')
   parser.add_argument('--dataset', help='Choose dataset: ctw/svt/ttt.', default="ttt")
@@ -42,12 +43,13 @@ if __name__ == "__main__":
   args = parser.parse_args()
   time_start = datetime.now()
   print("Start when {}.\n".format(time_start.strftime("%Y%m%d-%H%M%S")))
-  print("Running with: \n\t Use proposal: {},\n\t Is debug: {}.\n".format(args.proposal,args.debug))
-  print("\t Step size: {},\n\t Batch size: {}.\n".format(args.step,args.batch))
-  print("\t Data size: {} X {}.\n".format(args.datax,args.datay))
-  print("\t Optimizer: {}.\n".format(args.opt))
-  print("\t Taks name: {}.\n".format(args.name))
-  print("\t Use cross: {}.\n".format(args.cross))
+  print("Running with: \n\t Use proposal: {},\n\t Is debug: {}.".format(args.proposal,args.debug))
+  print("\t Step size: {},\n\t Batch size: {}.".format(args.step,args.batch))
+  print("\t Data size: {} X {}.".format(args.datax,args.datay))
+  print("\t Optimizer: {}.".format(args.opt))
+  print("\t Taks name: {}.".format(args.name))
+  print("\t Use cross: {}.".format(args.cross))
+  print("\t Save network: {}.".format('Yes' if(args.save)else 'No'))
 
   isdebug = args.debug
   # isdebug = True
@@ -120,8 +122,8 @@ if __name__ == "__main__":
     # trainer.set_trainer(loss=loss,opt=optimizer)
     for i in range(args.batch):
       x_train, y_train = mydatalog.read_train_batch(args.step)
-      # x_val, y_val = mydatalog.read_test_batch(2)
-      x_val, y_val = x_train[0:2], y_train[0:2]
+      x_val, y_val = mydatalog.read_test_batch(2)
+      # x_val, y_val = x_train[0:2], y_train[0:2]
       # if(islog==False):
       #   imgs = draw_boxes(x_train,y_train)
       #   # imgs = tf.split(imgs,imgs.shape[0],axis=0)
@@ -131,16 +133,18 @@ if __name__ == "__main__":
       #   islog=True
         
       trainer.fit(x_train,y_train)
-      # trainer.evaluate(x_val,y_val)
-        # trainer.evaluate(x_train[0:2],y_val[0:2])
+      trainer.evaluate(x_val,y_val)
+      trainer.evaluate(x_train[0:2],y_train[0:2])
       # inc = np.where(opt_schedule==i)
-      if(i==4):
+      if(i==5):
         optimizer = tf.keras.optimizers.SGD(learning_rate=args.learnrate)
         trainer.set_trainer(opt=optimizer)
       # if(i%10==0):
       #   trainer.set_trainer(data_count=mydatalog._init_conter)
       #   trainer.save()
-  
+  if(args.save):
+    trainer.set_trainer(data_count=mydatalog._init_conter)
+    trainer.save()
   time_usage = datetime.now()
   print("End at: {}.\n".format(time_usage.strftime("%Y%m%d-%H%M%S")))
   time_usage = time_usage - time_start

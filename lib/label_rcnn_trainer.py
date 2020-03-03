@@ -3,9 +3,8 @@ import tensorflow as tf
 import numpy as np
 import math
 from tflib.log_tools import str2time, str2num, auto_scalar, auto_image
-from tflib.evaluate_tools import draw_boxes, check_nan, draw_grid_in_gt
-from tflib.bbox_transform import xywh2yxyx, gen_label_from_gt
-from tflib.img_tools import label_overlap_tf, gen_label_from_prob
+from tflib.evaluate_tools import draw_boxes, check_nan, draw_grid_in_gt, label_overlap_tf, gen_label_from_prob, draw_msk_in_gt
+from tflib.bbox_transform import xywh2yxyx, gen_label_from_gt, gen_gt_from_msk
 from datetime import datetime
 from trainer import Trainer
 
@@ -15,10 +14,8 @@ class LRCNNTrainer(Trainer):
     self.cur_loss = 0.0
     self.threshold = threshold
     gtformat = gtformat.lower()
-    if(gtformat=='yxyx' or gtformat=='yx'):
-      self.gtformat='yxyx'
-    else:
-      self.gtformat='xywh'
+    self.gtformat = gtformat
+    if(not(gtformat in ['yxyx','xywh','mask'])):self.gtformat='yxyx'
     self.gen_box_by_gt = gen_box_by_gt
     self.ol_score = ol_score
     # super(FRCNNTrainer,self).__init__(kwargs)
@@ -37,6 +34,8 @@ class LRCNNTrainer(Trainer):
       auto_scalar(loss_value,step,"Loss")
       for itm in self.model.trainable_variables:
         auto_scalar(tf.reduce_mean(itm),step,itm.name)
+      for itn in y_pred:
+        auto_scalar(tf.reduce_mean(y_pred[itn]),step,itn)
       for iname in self.loss.loss_detail:
         auto_scalar(self.loss.loss_detail[iname],step,"Loss detail: {}".format(iname))
     return 0
@@ -54,29 +53,43 @@ class LRCNNTrainer(Trainer):
   def draw_gt_pred_box(self,score,bbox,gt_box,image):
     imgh = float(image.shape[-3])
     imgw = float(image.shape[-2])
+    feat_size = score.shape[-3:-1]
+    bbox = tf.reshape(bbox,[-1,4])
     col = tf.random.uniform(
       (1,3),
       minval=128,
       maxval=256,
     )
 
-    l1prb = tf.reshape(score,[-1,2])
-    l1prb = tf.nn.softmax(l1prb)
-    l1box = tf.reshape(tf.gather(tf.reshape(bbox,[-1,4]),tf.where(l1prb>0)),[-1,4])
-    # draw gt box frist
-    ret = draw_grid_in_gt(score.shape[-3:-1],gt_box,image)
-    if(not(self.gen_box_by_gt) and l1box.shape[0]!=None and l1box.shape[0]>0):
+    if(self.gtformat in ['xywh','yxyx']):
+      # draw gt box frist
+      image = draw_grid_in_gt(feat_size,gt_box,image)
+    else:
+      image = draw_msk_in_gt(gt_box,image)
+
+    score = tf.reshape(score,[-1,score.shape[-1]])
+    score = tf.nn.softmax(score)
+    l1box = tf.reshape(tf.gather(bbox,tf.where(score>0)),[-1,4])
+
+    if(l1box.shape[0]!=None and l1box.shape[0]>0):
       # if we have box, draw it
       l1box = tf.stack([l1box[:,0]/imgh,l1box[:,1]/imgw,l1box[:,2]/imgh,l1box[:,3]/imgw],axis=1)
-      ret = tf.image.draw_bounding_boxes(ret,tf.reshape(l1box,[1,-1,4]),col)
-    else:
-      # or draw box in red forcibly
-      l1prb = gen_label_from_gt(score.shape[1:3],gt_box,[imgh,imgw])
-      l1prb = tf.reshape(l1prb,[-1])
-      l1box = tf.reshape(tf.gather(tf.reshape(bbox,[-1,4]),tf.where(l1prb>0)),[-1,4])
-      l1box = tf.stack([l1box[:,0]/imgh,l1box[:,1]/imgw,l1box[:,2]/imgh,l1box[:,3]/imgw],axis=1)
-      ret = tf.image.draw_bounding_boxes(ret,tf.reshape(l1box,[1,-1,4]),tf.convert_to_tensor([[255.0,0.0,0.0]]))
-    return ret
+      image = tf.image.draw_bounding_boxes(image,tf.reshape(l1box,[1,-1,4]),col)
+    if(self.gen_box_by_gt):
+      if(self.gtformat in ['xywh','yxyx']):
+        # or draw box in red forcibly
+        score = gen_label_from_gt(feat_size,gt_box,[imgh,imgw])
+        score = tf.reshape(score,[-1])
+        l1box = tf.reshape(tf.gather(bbox,tf.where(score>0)),[-1,4])
+        l1box = tf.stack([l1box[:,0]/imgh,l1box[:,1]/imgw,l1box[:,2]/imgh,l1box[:,3]/imgw],axis=1)
+        image = tf.image.draw_bounding_boxes(image,tf.reshape(l1box,[1,-1,4]),tf.convert_to_tensor([[255.0,0.0,0.0]]))
+      else:
+        msk = gen_gt_from_msk(gt_box,feat_size,score.shape[-1])
+        msk = tf.reshape(msk,[-1])
+        l1box = bbox[msk>0]
+        l1box = tf.stack([l1box[:,0]/imgh,l1box[:,1]/imgw,l1box[:,2]/imgh,l1box[:,3]/imgw],axis=1)
+        image = tf.image.draw_bounding_boxes(image,tf.reshape(l1box,[1,-1,4]),tf.convert_to_tensor([[255.0,0.0,0.0]]))
+    return image
 
   def eval_action(self,x_single,y_single,step,logger):
     y_pred = self.model(x_single)
@@ -84,11 +97,13 @@ class LRCNNTrainer(Trainer):
     # imgw = float(x_single.shape[-2])
     if(self.gtformat=='xywh'):
       gt_box = xywh2yxyx(y_single[:,1:])
-    else:
+      label_gt = tf.stack([y_single[:,0],gt_box[:,0],gt_box[:,1],gt_box[:,2],gt_box[:,3]],axis=1)
+    elif(self.gtformat=='yxyx'):
       gt_box = y_single[:,1:]
-    label_gt = tf.stack([y_single[:,0],gt_box[:,0],gt_box[:,1],gt_box[:,2],gt_box[:,3]],axis=1)
+      label_gt = tf.stack([y_single[:,0],gt_box[:,0],gt_box[:,1],gt_box[:,2],gt_box[:,3]],axis=1)
+    else:label_gt = y_single
 
-    if(self.ol_score):
+    if(self.ol_score and self.gtformat in ['xywh','yxyx']):
       l1op = tf.reduce_sum(label_overlap_tf(gt_box,x_single.shape[1:3],gen_label_from_prob(y_pred["l1_score"])))
       l2op = tf.reduce_sum(label_overlap_tf(gt_box,x_single.shape[1:3],gen_label_from_prob(y_pred["l2_score"])))
       l3op = tf.reduce_sum(label_overlap_tf(gt_box,x_single.shape[1:3],gen_label_from_prob(y_pred["l3_score"])))
