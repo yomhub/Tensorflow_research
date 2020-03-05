@@ -155,8 +155,8 @@ class CTW():
         # _train_list[0]['annotations'][0][0]['text']: string, unicode in chinese
 
         # _val_list: same as _train_list
+        self.train_conter = 0
         self._info_list, self._test_list, self._train_list = _read_json(ctw_dir,ann_filename)
-        self._init_conter = 0
         self._train_dir = train_img_dir
         self._test_dir = test_img_dir
         self._log_dir = log_dir
@@ -183,12 +183,12 @@ class CTW():
         self._log.close()
 
     def reset(self):
-        self._init_conter = 0
+        self.train_conter = 0
         self._log.close()
         self._log = open(self._log_dir,'w')
     
     def setconter(self,cont):
-        self._init_conter = cont if len(self._train_list) > cont else 0
+        self.train_conter = cont if len(self._train_list) > cont else 0
 
     def _format_output(self,out_annotation):
       return [int(out_annotation['is_chinese']),]+out_annotation["adjusted_bbox"]
@@ -196,7 +196,7 @@ class CTW():
     def read_batch(self, batch_size=50):
         conter = batch_size if batch_size > 0 else 10
         batch_size = batch_size if batch_size > 0 else 10
-        i=self._init_conter
+        i=self.train_conter
         y_list=[]
         img_arr_list=[]
         if(self._out_size!=None):
@@ -239,7 +239,7 @@ class CTW():
                 self._log.write("Can't read image "+ os.path.join(self._train_dir, self._train_list[i]['file_name']) +"\n")
             i+=1
 
-        self._init_conter=i
+        self.train_conter=i
         img_arr_list = tf.stack(img_arr_list)
         if(len(y_list)==1):
           y_list = y_list[0]
@@ -253,11 +253,11 @@ class CTW():
             try:
                 ytmp=[]
                 xtmp=_load_and_preprocess_image(
-                    os.path.join(self._train_dir, self._train_list[self._init_conter]['file_name']),
+                    os.path.join(self._train_dir, self._train_list[self.train_conter]['file_name']),
                     self._out_size)
                 if(len(xtmp.shape)==3):
                     xtmp=tf.reshape(xtmp,[1,xtmp.shape[0],xtmp.shape[1],xtmp.shape[2]])
-                for word in self._train_list[self._init_conter]['annotations']:
+                for word in self._train_list[self.train_conter]['annotations']:
                     for text in word:
                         if(self._out_size!=None):
                           gtmp=text["adjusted_bbox"]
@@ -270,16 +270,16 @@ class CTW():
                           ytmp.append([float(text['is_chinese']),]+gtmp)
                         else:
                           ytmp.append([float(text['is_chinese']),]+text["adjusted_bbox"])
-                self._init_conter+=1
+                self.train_conter+=1
                 yield xtmp,tf.convert_to_tensor(ytmp,dtype=tf.float32)
             except IndexError:
-                self._init_conter = 0
+                self.train_conter = 0
             except:
                 self._log.write("Can't read image "+ 
                     os.path.join(self._train_dir, 
-                    self._train_list[self._init_conter]['file_name']) +
+                    self._train_list[self.train_conter]['file_name']) +
                     "\n")
-                self._init_conter+=1        
+                self.train_conter+=1        
     def statistic(self):
         all_imgs = len(self._train_list)
         conter = 0

@@ -563,11 +563,16 @@ def pre_box_loss_by_det(gt_box, det_map, org_size=None, sigma=1.0, use_cross=Tru
 
   return tf.convert_to_tensor(abs_boundary_det)
 
-def pre_box_loss_by_msk(gt_mask, det_map, score_map, org_size, lb_thr=0.2, use_cross=True, use_pixel=True, mag_f='smooth', sigma=1.0):
+def pre_box_loss_by_msk(gt_mask, det_map, score_map, org_size, det_map_fom='pet',
+  lb_thr=0.2, use_cross=True, use_pixel=True, mag_f='smooth', sigma=1.0):
   """
     Args:
       gt_mask: tensor ((1),hm,wm,(1)) mask.
-      det_map: deta value tensor ((1),h,w,4) with [dy1, dx1, dy2, dx2]
+      det_map: deta value tensor ((1),h,w,4)
+      det_map_fom: det_map format, can be
+        'pet': [dy1, dx1, dy2, dx2] percentage difference value in [-1.0,1.0]
+        'pix': [dy1, dx1, dy2, dx2] pixel difference value
+        'yxhw':[dy1, dx1, dh, dw] in float
       score_map: scores value tensor ((1),h,w,num_class)
       org_size: original image size (h,w)
       lb_thr: lower boundary threshold in [0,0.5]
@@ -584,6 +589,8 @@ def pre_box_loss_by_msk(gt_mask, det_map, score_map, org_size, lb_thr=0.2, use_c
       loss value
   """
   num_class = score_map.shape[-1] - 1
+  det_map_fom = det_map_fom.lower()
+  if(not(det_map_fom in ['pet','pix','yxhw'])):det_map_fom='pet'
   pred_map = tf.reshape(det_map,det_map.shape[-3:])
   lb_thr = min(max(lb_thr,0.0),0.5)
   # convert gt_mask to [0,num_class-1]
@@ -592,8 +599,12 @@ def pre_box_loss_by_msk(gt_mask, det_map, score_map, org_size, lb_thr=0.2, use_c
   
   cube_h,cube_w = org_size[0]/pred_map.shape[-3],org_size[1]/pred_map.shape[-2]
   icube_h,icube_w = int(cube_h), int(cube_w)
-  min_pxls = int((icube_h*icube_w)*lb_thr)
+  min_pxls = int((icube_h*icube_w)*lb_thr*lb_thr)
   # min_pxls = min(int(icube_w*lb_thr),int(icube_h*lb_thr))
+
+  # convert percentage difference to pixel difference
+  if(det_map_fom=='pet'):pred_map = tf.stack([pred_map[:,:,0]*cube_h,pred_map[:,:,1]*cube_w,pred_map[:,:,2]*cube_h,pred_map[:,:,3]*cube_w],axis=-1)
+
   # select all boxes VS boundary boxes
   max_pxls = int(icube_h*icube_w) if use_pixel else int(icube_h*icube_w)-min_pxls
   tmp = len(gt_mask.shape)
@@ -631,15 +642,14 @@ def pre_box_loss_by_msk(gt_mask, det_map, score_map, org_size, lb_thr=0.2, use_c
     det_cx,det_cy = tf.meshgrid(
       tf.range(0,pred_map.shape[-2]+2,dtype=tf.float32)*cube_w,
       tf.range(0,pred_map.shape[-3]+2,dtype=tf.float32)*cube_h)
-    
-    pred_map_select = tf.stack([pred_map_select[:,0]*cube_h,pred_map_select[:,1]*cube_w,pred_map_select[:,2]*cube_h,pred_map_select[:,3]*cube_w],axis=1)
+
     for i in range(boxs_main.shape[0]):
       dy1,dy2 = pred_map_select[i,0::2]
       dx1,dx2 = pred_map_select[i,1::2]
       fy,fx = boxs_main[i]
       dx1,dx2 = int(dx1+det_cx[fy,fx]),int(dx2+det_cx[fy,fx])
       dy1,dy2 = int(dy1+det_cy[fy,fx]),int(dy2+det_cy[fy,fx])
-      if(dy1<dy2 and dx1<dx2 and dy1>0 and dx1>0 and dy2<pred_mask.shape[0] and dx2<pred_mask.shape[1]):
+      if(dy1<dy2 and dx1<dx2 and dy1>0 and dx1>0 and dy2<gt_mask.shape[0] and dx2<gt_mask.shape[1]):
         pred_mask[dy1:dy2,dx1:dx2] = 1
     gt_mask = gt_mask + pred_mask
     oara = tf.where(gt_mask==1)
@@ -665,10 +675,9 @@ def pre_box_loss_by_msk(gt_mask, det_map, score_map, org_size, lb_thr=0.2, use_c
     ymax,xmax = icube_h-ymin,icube_w-xmin
     cnt = 0
     hit = False
+    if(det_map_fom=='pet'):pred_map
     for i in range(boxs_main.shape[0]):
       hit = False
-      dy1,dy2 = pred_map_select[i,0::2]
-      dx1,dx2 = pred_map_select[i,1::2]
       fy,fx = boxs_main[i]
       my2,mx2 = tf.reduce_max(pos_ins[pos_ins[:,0]==i][:,1:3],axis=0)+1
       my1,mx1 = tf.reduce_min(pos_ins[pos_ins[:,0]==i][:,1:3],axis=0)+1
@@ -679,8 +688,8 @@ def pre_box_loss_by_msk(gt_mask, det_map, score_map, org_size, lb_thr=0.2, use_c
       elif(mx1>xmax):dfx=1
 
       if(dfy==0 and dfx==0):
-        my2,my1 = float((icube_h-my2)/icube_h),float(my1/icube_h)
-        mx2,mx1 = float((icube_w-mx2)/icube_w),float(mx1/icube_w)
+        my2,my1 = float(icube_h-my2),float(my1)
+        mx2,mx1 = float(icube_w-mx2),float(mx1)
         if(my1>0):
           bxloss += mag_f(tf.math.abs(pred_map[fy,fx,0]-my1))
           hit=True
@@ -697,19 +706,19 @@ def pre_box_loss_by_msk(gt_mask, det_map, score_map, org_size, lb_thr=0.2, use_c
         fy+=dfy
         fx+=dfx
         if(dfy>0):
-          bxloss += mag_f(tf.math.abs(pred_map[fy,fx,0]+float((icube_h-my1)/icube_h)))
+          bxloss += mag_f(tf.math.abs(pred_map[fy,fx,0]+float(icube_h-my1)))
           hit=True
         elif(dfy<0):
-          bxloss += mag_f(tf.math.abs(pred_map[fy,fx,2]-float(my2/icube_h)))
+          bxloss += mag_f(tf.math.abs(pred_map[fy,fx,2]-float(my2)))
           hit=True
         if(dfx>0):
-          bxloss += mag_f(tf.math.abs(pred_map[fy,fx,1]+float((icube_w-mx1)/icube_w)))
+          bxloss += mag_f(tf.math.abs(pred_map[fy,fx,1]+float(icube_w-mx1)))
           hit=True
         elif(dfx<0):
-          bxloss += mag_f(tf.math.abs(pred_map[fy,fx,3]-float(mx2/icube_w)))
+          bxloss += mag_f(tf.math.abs(pred_map[fy,fx,3]-float(mx2)))
           hit=True
       if(hit):cnt+=1
-    bxloss /= boxs_main.shape[0]
+    if(cnt>0):bxloss /= cnt
   return bxloss,label_loss
 
 def gen_gt_from_msk(gt_mask,dst_size,num_class,lb_thr=0.2):

@@ -67,7 +67,7 @@ class TTText():
         tf.image.decode_image(tf.io.read_file(os.path.join(self.xtraindir,mdir))),self.out_size)
       img_list.append(tf.reshape(tmp,[1]+tmp.shape))
       msk_list.append(tf.image.resize(
-        tf.image.decode_image(tf.io.read_file(os.path.join(self.ytraindir,mdir))),self.out_size))
+        tf.image.decode_image(tf.io.read_file(os.path.join(self.ytraindir,mdir))),self.out_size,'nearest'))
 
     if(self.out_format=='tensor'):
       img_list = tf.convert_to_tensor(img_list)
@@ -89,7 +89,7 @@ class TTText():
         tf.image.decode_image(tf.io.read_file(os.path.join(self.xtestdir,mdir))),self.out_size)
       img_list.append(tf.reshape(tmp,[1]+tmp.shape))
       msk_list.append(tf.image.resize(
-        tf.image.decode_image(tf.io.read_file(os.path.join(self.ytestdir,mdir))),self.out_size))
+        tf.image.decode_image(tf.io.read_file(os.path.join(self.ytestdir,mdir))),self.out_size,'nearest'))
 
     if(self.out_format=='tensor'):
       img_list = tf.convert_to_tensor(img_list)

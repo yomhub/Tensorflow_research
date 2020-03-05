@@ -128,7 +128,7 @@ class SVT():
         self.out_x = out_size[1]
         self._xtdir, self._ytest = _read_xml(os.path.join(dir,'test.xml'),self.out_x,self.out_y)
         self._xtraindir, self._ytrain = _read_xml(os.path.join(dir,'train.xml'),self.out_x,self.out_y)
-        self._init_conter = 0
+        self.train_conter = 0
         self._init_test_conter = 0
 
     def read_test_batch(self, batch_size=10):
@@ -153,16 +153,16 @@ class SVT():
         return img_list, yret
 
     def read_train_batch(self, batch_size=10):
-        mend = min(len(self._xtraindir),self._init_conter+batch_size)
-        inds = slice(self._init_conter,mend) 
-        readnum = mend-self._init_conter
-        self._init_conter += readnum
+        mend = min(len(self._xtraindir),self.train_conter+batch_size)
+        inds = slice(self.train_conter,mend) 
+        readnum = mend-self.train_conter
+        self.train_conter += readnum
         xret = self._xtraindir[inds]
         yret = self._ytrain[inds]
 
         if(readnum < batch_size):
             inds = slice(batch_size - readnum)
-            self._init_conter = batch_size - readnum
+            self.train_conter = batch_size - readnum
             yret += self._ytrain[inds]
             xret += self._xtraindir[inds]
 
@@ -174,7 +174,7 @@ class SVT():
         return img_list, yret
         
     def setconter(self,conter):
-        self._init_conter = conter
+        self.train_conter = conter
 
     def caculate_avg(self):
         avg_area_pre_img = []

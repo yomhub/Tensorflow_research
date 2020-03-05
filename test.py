@@ -30,6 +30,7 @@ if __name__ == "__main__":
   parser.add_argument('--opt', help='Choose optimizer in sgd and adam.',default='adam')
   parser.add_argument('--debug', help='Set --debug if want to debug.', action="store_true")
   parser.add_argument('--save', help='Set --save if want to save network.', action="store_true")
+  parser.add_argument('--load', help='Set --load if want to load network.', action="store_true")
   parser.add_argument('--net', help='Choose noework (frcnn/lrcnn).', default="lrcnn")
   parser.add_argument('--name', help='Name of task.')
   parser.add_argument('--dataset', help='Choose dataset: ctw/svt/ttt.', default="ttt")
@@ -50,6 +51,7 @@ if __name__ == "__main__":
   print("\t Taks name: {}.".format(args.name))
   print("\t Use cross: {}.".format(args.cross))
   print("\t Save network: {}.".format('Yes' if(args.save)else 'No'))
+  print("\t Load network: {}.".format('Yes' if(args.load)else 'No'))
 
   isdebug = args.debug
   # isdebug = True
@@ -91,11 +93,11 @@ if __name__ == "__main__":
     model = Label_RCNN(num_classes=2)
     loss = LRCNNLoss(imge_size=[args.datay,args.datax],gtformat=gtformat)
   
-  if(not(isdebug)):
+  if(not(isdebug) and args.load):
     last_model = trainer.load(model)
-  if(not(isdebug) and last_model!=None):
-    model = last_model
-    mydatalog.setconter(trainer.data_count)
+    if(last_model!=None):
+      model = last_model
+      mydatalog.setconter(trainer.data_count)
 
   model.compile(
     optimizer=optimizer,
@@ -143,7 +145,7 @@ if __name__ == "__main__":
       #   trainer.set_trainer(data_count=mydatalog._init_conter)
       #   trainer.save()
   if(args.save):
-    trainer.set_trainer(data_count=mydatalog._init_conter)
+    trainer.set_trainer(data_count=mydatalog.train_conter)
     trainer.save()
   time_usage = datetime.now()
   print("End at: {}.\n".format(time_usage.strftime("%Y%m%d-%H%M%S")))
