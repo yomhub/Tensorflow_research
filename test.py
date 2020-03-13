@@ -134,7 +134,8 @@ if __name__ == "__main__":
       #   trainer.log_image(imgs,10,name="{} training data examples.".format(imgs.shape[0]))
       #   islog=True
         
-      trainer.fit(x_train,y_train)
+      ret = trainer.fit(x_train,y_train)
+      if(ret==-1):break
       trainer.evaluate(x_val,y_val)
       trainer.evaluate(x_train[0:2],y_train[0:2])
       # inc = np.where(opt_schedule==i)
@@ -144,7 +145,7 @@ if __name__ == "__main__":
       # if(i%10==0):
       #   trainer.set_trainer(data_count=mydatalog._init_conter)
       #   trainer.save()
-  if(args.save):
+  if(ret==0 and args.save):
     trainer.set_trainer(data_count=mydatalog.train_conter)
     trainer.save()
   time_usage = datetime.now()

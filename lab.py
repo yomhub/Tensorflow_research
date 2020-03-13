@@ -61,7 +61,7 @@ if __name__ == "__main__":
   model(tf.zeros((1,360,640,3)))
   pred = model(x_train[0])
   for i in range(len(y_train)):
-    ret = pre_box_loss_by_msk(gt_mask=y_train[i],det_map=pred["l1_bbox_det"],score_map=pred["l1_score"],org_size=[360,640],use_pixel=False)
-    ret = pre_box_loss_by_msk(gt_mask=y_train[i],det_map=pred["l2_bbox_det"],score_map=pred["l2_score"],org_size=[360,640],use_pixel=False)
-    ret = pre_box_loss_by_msk(gt_mask=y_train[i],det_map=pred["l3_bbox_det"],score_map=pred["l3_score"],org_size=[360,640],use_pixel=False)
+    ret = pre_box_loss_by_msk(gt_mask=y_train[i],det_map=pred["l1_bbox_det"],score_map=pred["l1_score"],recf_size=pred["l1_rf_s"],det_map_fom='pix',use_pixel=False)
+    ret = pre_box_loss_by_msk(gt_mask=y_train[i],det_map=pred["l2_bbox_det"],score_map=pred["l2_score"],recf_size=pred["l2_rf_s"],det_map_fom='pix',use_pixel=False)
+    ret = pre_box_loss_by_msk(gt_mask=y_train[i],det_map=pred["l3_bbox_det"],score_map=pred["l3_score"],recf_size=pred["l3_rf_s"],det_map_fom='pix',use_pixel=False)
   print('end\n')

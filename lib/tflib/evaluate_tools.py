@@ -43,31 +43,32 @@ def draw_boxes(img,boxes,gtformat='xywh'):
 
   return tf.reshape(ret,[ret.shape[0],]+ret.shape[-3:])
 
-def draw_grid_in_gt(layer_shape,gt_box,image):
+def draw_grid_in_gt(recf_size,gt_box,image):
   """
     Draw grid inside GT box refer to layer's receptive field
     Args:
-      layer_shape: [h,w]
+      recf_size: receptive field size (rf_h,rf_w,stride_y,stride_x)
       gt_box: (N,4 or 5) with [(label),y1,x1,y2,x2]
       image: tensor with shape (h,w,ch) or (1,h,w,ch)
     Return:
       image tensor with shape (1,h,w,ch)
   """
+  assert(recf_size.shape[0]>=4)
   if(len(image.shape)==3):
     image = tf.reshape(image,[1,]+image.shape)
   imgh,imgw = float(image.shape[-3]),float(image.shape[-2])
-  cube_h,cube_w = image.shape[-3]/layer_shape[0],image.shape[-2]/layer_shape[1]
+  cube_h,cube_w,stride_y,stride_x = float(recf_size[0]),float(recf_size[1]),float(recf_size[2]),float(recf_size[3])
   boxes = gt_box[:,-4:]
   ret = image
   for box in boxes:
-    x_start,x_end = math.ceil(box[1] / cube_w),math.floor(box[3] / cube_w)
-    y_start,y_end = math.ceil(box[0] / cube_h),math.floor(box[2] / cube_h)
-    sub_box_x = tf.range(x_start,x_end+1,dtype=tf.float32)*cube_w
-    sub_box_y = tf.range(y_start,y_end+1,dtype=tf.float32)*cube_h
-    sub_box_xs = tf.concat([tf.reshape(box[1],[1]),sub_box_x],axis=0)
-    sub_box_xe = tf.concat([sub_box_x,tf.reshape(box[3],[1])],axis=0)
+    x_start,x_end = math.ceil(box[1] / stride_x),math.floor((box[3]-cube_w) / stride_x)
+    y_start,y_end = math.ceil(box[0] / stride_y),math.floor((box[2]-cube_h) / stride_y)
+    sub_box_x = tf.range(x_start,x_end+1,dtype=tf.float32)*stride_x
+    sub_box_y = tf.range(y_start,y_end+1,dtype=tf.float32)*stride_y
+    sub_box_xs = tf.concat([tf.reshape(box[1],[1]),sub_box_x],axis=0) # 1D, [x0,0*stx,1*stx...]
+    sub_box_xe = tf.concat([sub_box_x+cube_w,tf.reshape(box[3],[1])],axis=0) # 1D, [0*stx+w,1*stx+w...,x1]
     sub_box_ys = tf.concat([tf.reshape(box[0],[1]),sub_box_y],axis=0)
-    sub_box_ye = tf.concat([sub_box_y,tf.reshape(box[2],[1])],axis=0)
+    sub_box_ye = tf.concat([sub_box_y+cube_h,tf.reshape(box[2],[1])],axis=0)
     sub_box_xs,sub_box_ys = tf.meshgrid(sub_box_xs,sub_box_ys)
     sub_box_xe,sub_box_ye = tf.meshgrid(sub_box_xe,sub_box_ye)
     sub_box = tf.stack([sub_box_ys/imgh,sub_box_xs/imgw,sub_box_ye/imgh,sub_box_xe/imgw],axis=-1)

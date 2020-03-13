@@ -113,26 +113,28 @@ def clip_boxes_tf(boxes, im_info, order='xyxy'):
   return tf.stack([b02[:,0], b13[:,0], b02[:,1], b13[:,1]], axis=1)
 
 @tf.function
-def feat_layer_cod_gen(org_size,feat_size,class_num=1):
+def feat_layer_cod_gen(recf_size,feat_size,class_num=1):
   """
     Generate feature layer coordinate.
     Args:
-      org_size: original image size [oh,ow]
+      recf_size: receptive field size [rh,rw,sy,sx]
+        where rh,rw is receptive field size
+        and sy,sh is stride size in y,x
       feat_size: feature image size [fh,fw]
       class_num: number of class
     Return:
       tensor with (1,fh,fw,class_num*4) shape
       where 4 is [dy1,dx1,dy2,dx2]
   """
-  cube_h,cube_w = float(org_size[0] / feat_size[0]),float(org_size[1] / feat_size[1])
+  cube_h,cube_w,stride_y,stride_x = recf_size[0],recf_size[1],recf_size[2],recf_size[3]
   det_cx,det_cy = tf.meshgrid(
-    tf.range(0,feat_size[1]+2,dtype=tf.float32)*cube_w,
-    tf.range(0,feat_size[0]+2,dtype=tf.float32)*cube_h)  
+    tf.range(0,feat_size[1]+2,dtype=tf.float32)*stride_x,
+    tf.range(0,feat_size[0]+2,dtype=tf.float32)*stride_y)  
   det_mrt = tf.stack([
       det_cy[0:feat_size[0],0:feat_size[1]],
       det_cx[0:feat_size[0],0:feat_size[1]],
-      det_cy[1:feat_size[0]+1,1:feat_size[1]+1],
-      det_cx[1:feat_size[0]+1,1:feat_size[1]+1],
+      det_cy[0:feat_size[0],0:feat_size[1]]+cube_h,
+      det_cx[0:feat_size[0],0:feat_size[1]]+cube_w,
     ],axis=-1)
   det_mrt = tf.broadcast_to(det_mrt,[class_num,]+det_mrt.shape[-3:-1]+[4])
   det_mrt = tf.transpose(det_mrt,perm=[1,2,0,3])
@@ -166,10 +168,11 @@ def map2coordinate(boxes,org_cod,targ_cod):
   
   return tf.stack([boxes[:,0]*fact_y,boxes[:,1]*fact_x,boxes[:,2]*fact_y,boxes[:,3]*fact_x],axis=1)
 
-def gen_label_from_gt(layer_shape,gt_box,img_shape=None,bg_label=-1):
+def gen_label_from_gt(layer_shape,recf_size,gt_box,img_shape,bg_label=-1):
   """
     Args: 
       layer_shape: layer shape [layer_height, layer_width]
+      recf_size: receptive field size (rf_h,rf_w,stride_y,stride_x)
       gt_box: (total_gts,5) with [class, y1, x1, y2, x2]
       img_shape: 
         none with a normalized gt_box coordinate
@@ -183,14 +186,14 @@ def gen_label_from_gt(layer_shape,gt_box,img_shape=None,bg_label=-1):
     cube_h,cube_w = img_shape[0]/layer_shape[0],img_shape[1]/layer_shape[1]
   else:
     cube_h,cube_w = 1,1
-
+  cube_h,cube_w,stride_y,stride_x = float(recf_size[0]),float(recf_size[1]),float(recf_size[2]),float(recf_size[3])
   gtlabel = gt_box[:,0].numpy()
   gtlabel = gtlabel.astype(np.int32)
   bbox = gt_box[:,1:]
   label_np = np.full(layer_shape,bg_label,np.int32)
   for i in range(gtlabel.shape[0]):
-    x_start,x_end = bbox[i,1] / cube_w,bbox[i,3] / cube_w
-    y_start,y_end = bbox[i,0] / cube_h,bbox[i,2] / cube_h
+    x_start,x_end = bbox[i,1] / stride_x,(bbox[i,3]-cube_w) / stride_x
+    y_start,y_end = bbox[i,0] / stride_y,(bbox[i,2]-cube_h) / stride_y
     x_start = math.floor(x_start) if(x_start - int(x_start)) < 0.7 else math.ceil(x_start)
     y_start = math.floor(y_start) if(y_start - int(y_start)) < 0.7 else math.ceil(y_start)
     x_end = math.floor(x_end) if(x_end - int(x_end)) < 0.2 else math.ceil(x_end)
@@ -469,29 +472,30 @@ def pre_box_loss(gt_box, pred_map, org_size=None, sigma=1.0):
   return tf.convert_to_tensor(abs_boundary_det)
 
 
-def pre_box_loss_by_det(gt_box, det_map, org_size=None, sigma=1.0, use_cross=True, mag_f='smooth'):
+def pre_box_loss_by_det(gt_box, det_map, recf_size, sigma=1.0, use_cross=True, mag_f='smooth', bdf=0.2):
   """
     Args:
       gt_box: tensor (total_gts,4) with [y1, x1, y2, x2]
         in original coordinate.
       det_map: deta in prediction layer 
-        tensor ((1),h,w,4) with [dy1, dx1, dy2, dx2]
-      org_size: original image size (h,w)
+        tensor ((1),h,w,4) with [dy1, dx1, dy2, dx2] in pixel unit
+      recf_size: receptive field size (rf_h,rf_w,stride_y,stride_x)
       mag_f: magnification function, can be
         string: 'smooth', apply L1 smooth on loss function 
         string: 'sigmoid', apply sigmoid on loss function 
         tf.keras.layers.Lambda: apply input Lambda object
         others, don't apply any magnification function
+      bdf: boundary for flexible interval, 
+        boundary in (1-bdf,1) will be conseiered into next box 
+        boundary in (0,bdf) will be conseiered into previous box 
     Return:
       loss value
   """
   pred_map = tf.reshape(det_map,det_map.shape[-3:])
   use_cross=False
-  if(org_size==None):
-    cube_h,cube_w = 1,1
-  else:
-    cube_h,cube_w = org_size[0]/pred_map.shape[-3],org_size[1]/pred_map.shape[-2]
-
+  cube_h,cube_w,stride_y,stride_x = float(recf_size[0]),float(recf_size[1]),float(recf_size[2]),float(recf_size[3])
+  feat_h,feat_w = det_map.shape[-3],det_map.shape[-2]
+  if(bdf>0.5 or bdf<0.0):bdf=0.2
   if(type(mag_f)==str):
     mag_f = mag_f.lower()
     if(mag_f=='tanh'):
@@ -507,63 +511,61 @@ def pre_box_loss_by_det(gt_box, det_map, org_size=None, sigma=1.0, use_cross=Tru
 
   abs_boundary_det = []
   for box in gt_box:
-    f_x_start,f_x_end = box[1] / cube_w,box[3] / cube_w
-    f_y_start,f_y_end = box[0] / cube_h,box[2] / cube_h
-    x_start = math.floor(f_x_start) if(f_x_start - int(f_x_start)) < 0.8 else math.ceil(f_x_start)
-    y_start = math.floor(f_y_start) if(f_y_start - int(f_y_start)) < 0.8 else math.ceil(f_y_start)
-    x_end = math.floor(f_x_end) if(f_x_end - int(f_x_end)) < 0.2 else math.ceil(f_x_end)
-    y_end = math.floor(f_y_end) if(f_y_end - int(f_y_end)) < 0.2 else math.ceil(f_y_end)
-    
+    f_x_start,f_x_end = box[1] / stride_x,(box[3]-cube_w) / stride_x
+    f_y_start,f_y_end = box[0] / stride_y,(box[2]-cube_h) / stride_y
+    x_start = math.floor(f_x_start) if(f_x_start - int(f_x_start)) < (1-bdf) else math.ceil(f_x_start)
+    y_start = math.floor(f_y_start) if(f_y_start - int(f_y_start)) < (1-bdf) else math.ceil(f_y_start)
+    x_end = math.floor(f_x_end) if(f_x_end - int(f_x_end)) < bdf else math.ceil(f_x_end)
+    y_end = math.floor(f_y_end) if(f_y_end - int(f_y_end)) < bdf else math.ceil(f_y_end)
+    if(x_end<=x_start):x_end=x_start+1
+    elif(x_end>=feat_w):x_end=feat_w-1
+    if(y_end<=y_start):y_end=y_start+1
+    elif(y_end>=feat_h):y_end=feat_h-1
+
     tmp_det_sum = 0.0
-    tmp_tag = 0.0 if ((y_end-1)>y_start) else f_y_end - y_end
-    tmp_det_sum += tf.reduce_mean(mag_f(tf.math.abs(f_y_start - float(y_start) - pred_map[y_start,x_start:x_end,0])))
-    tmp_det_sum += tf.reduce_mean(mag_f(tf.math.abs(pred_map[y_start,x_start:x_end,2] - tmp_tag)))
-    # tmp_det_sum += tf.reduce_mean(tf.math.squared_difference(f_y_start - float(y_start),pred_map[y_start,x_start:x_end,0]))
-
+    tmp_tag = 0.0 if (y_end-1)>y_start else cube_h - (box[2]-float(y_start*stride_y))
+    # Top boundary
+    tmp_det_sum += tf.reduce_mean(mag_f(tf.math.abs(box[0] - float(y_start*stride_y) - pred_map[y_start,x_start:x_end,0]))) # 0, up side
+    tmp_det_sum += tf.reduce_mean(mag_f(tf.math.abs(pred_map[y_start,x_start:x_end,2] - tmp_tag))) # 2, down side
     if(use_cross and x_end-x_start>3):
-      tmp_det_sum += tf.reduce_mean(mag_f(tf.math.abs(pred_map[y_start,(x_start+1):(x_end-1),3])))
-      tmp_det_sum += tf.reduce_mean(mag_f(tf.math.abs(pred_map[y_start,(x_start+1):(x_end-1),1])))
-      # tmp_ysc = tf.where(tmp_ysc > (1. / sigma_2),tmp_ysc - (0.5 / sigma_2),tf.pow(tmp_ysc, 2) * (sigma_2 / 2.))
+      tmp_det_sum += tf.reduce_mean(mag_f(tf.math.abs(pred_map[y_start,(x_start+1):(x_end-1),3]))) # 3, right side
+      tmp_det_sum += tf.reduce_mean(mag_f(tf.math.abs(pred_map[y_start,(x_start+1):(x_end-1),1]))) # 1, left side
 
+    # Bottom boundary, y_end-1 means use Y2 in previous box
+    # (yend-1)       gty2  yend
+    # |---------------x----|--------------------|
+    # gty2 - yend * stride_y < 0
+    # (yend-1)           yend gty2
+    # |--------------------|-x------------------|
+    # gty2 - yend * stride_y > 0
     if((y_end-1)>y_start):
       tmp_det_sum += tf.reduce_mean(mag_f(tf.math.abs(pred_map[(y_end-1),x_start:x_end,0])))
-      tmp_det_sum += tf.reduce_mean(mag_f(tf.math.abs(f_y_end - float(y_end) - pred_map[(y_end-1),x_start:x_end,2])))
-      # tmp_det_sum += tf.reduce_mean(tf.math.squared_difference(f_y_end - float(y_end), pred_map[(y_end-1),x_start:x_end,2]))
-      # tmp_ye = tf.where(tmp_ye > (1. / sigma_2),tmp_ye - (0.5 / sigma_2),tf.pow(tmp_ye, 2) * (sigma_2 / 2.))
-
+      tmp_det_sum += tf.reduce_mean(mag_f(tf.math.abs(box[2] - float(y_end*stride_y) - pred_map[(y_end-1),x_start:x_end,2])))
       if(use_cross and x_end-x_start>3):
         tmp_det_sum += tf.reduce_mean(mag_f(tf.math.abs(pred_map[(y_end-1),(x_start+1):(x_end-1),1])))
         tmp_det_sum += tf.reduce_mean(mag_f(tf.math.abs(pred_map[(y_end-1),(x_start+1):(x_end-1),3])))
-        # tmp_yec = tf.where(tmp_yec > (1. / sigma_2),tmp_yec - (0.5 / sigma_2),tf.pow(tmp_yec, 2) * (sigma_2 / 2.))
     
-    tmp_tag = 0.0 if ((x_end-1)>x_start) else f_x_end - x_end
-    tmp_det_sum += tf.reduce_mean(mag_f(tf.math.abs(f_x_start - float(x_start) - pred_map[y_start:y_end,x_start,1])))
-    tmp_det_sum += tf.reduce_mean(mag_f(tf.math.abs(pred_map[y_start:y_end,x_start,3] - tmp_tag)))
-    # tmp_det_sum += tf.reduce_mean(tf.math.squared_difference(f_x_start - float(x_start),pred_map[y_start:y_end,x_start,1]))
-    # tmp_xs = tf.where(tmp_xs > (1. / sigma_2),tmp_xs - (0.5 / sigma_2),tf.pow(tmp_xs, 2) * (sigma_2 / 2.))
-
+    # Left boundary
+    tmp_tag = 0.0 if ((x_end-1)>x_start) else cube_w - (box[3]-float(x_start*stride_x))
+    tmp_det_sum += tf.reduce_mean(mag_f(tf.math.abs(box[1] - float(x_start*stride_x)  - pred_map[y_start:y_end,x_start,1]))) # 1, left side
+    tmp_det_sum += tf.reduce_mean(mag_f(tf.math.abs(pred_map[y_start:y_end,x_start,3] - tmp_tag))) # 3, right side
     if(use_cross and y_end-y_start>3):
-      tmp_det_sum += tf.reduce_mean(mag_f(tf.math.abs(pred_map[(y_start+1):(y_end-1),x_start,0])))
-      tmp_det_sum += tf.reduce_mean(mag_f(tf.math.abs(pred_map[(y_start+1):(y_end-1),x_start,2])))
-      # tmp_xsc = tf.where(tmp_xsc > (1. / sigma_2),tmp_xsc - (0.5 / sigma_2),tf.pow(tmp_xsc, 2) * (sigma_2 / 2.))
+      tmp_det_sum += tf.reduce_mean(mag_f(tf.math.abs(pred_map[(y_start+1):(y_end-1),x_start,0]))) # 0, up side
+      tmp_det_sum += tf.reduce_mean(mag_f(tf.math.abs(pred_map[(y_start+1):(y_end-1),x_start,2]))) # 2, down side
 
+    # Right boundary, same logic
     if((x_end-1)>x_start):
-      # down boundary
       tmp_det_sum += tf.reduce_mean(mag_f(tf.math.abs(pred_map[y_start:y_end,(x_end-1),1])))
-      tmp_det_sum += tf.reduce_mean(mag_f(tf.math.abs(f_x_end - float(x_end) - pred_map[y_start:y_end,(x_end-1),3])))
-      # tmp_det_sum += tf.reduce_mean(tf.math.squared_difference(f_x_end - float(x_end),pred_map[y_start:y_end,(x_end-1),3]))
-      # tmp_xe = tf.where(tmp_xe > (1. / sigma_2),tmp_xe - (0.5 / sigma_2),tf.pow(tmp_xe, 2) * (sigma_2 / 2.))
-
+      tmp_det_sum += tf.reduce_mean(mag_f(tf.math.abs(box[3] - float(x_end*stride_x) - pred_map[y_start:y_end,(x_end-1),3])))
       if(use_cross and y_end-y_start>3):
         tmp_det_sum += tf.reduce_mean(mag_f(tf.math.abs(pred_map[(y_start+1):(y_end-1),(x_end-1),0])))
         tmp_det_sum += tf.reduce_mean(mag_f(tf.math.abs(pred_map[(y_start+1):(y_end-1),(x_end-1),2])))
-        # tmp_xec = tf.where(tmp_xec > (1. / sigma_2),tmp_xec - (0.5 / sigma_2),tf.pow(tmp_xec, 2) * (sigma_2 / 2.))
 
     abs_boundary_det+=[tmp_det_sum]
 
   return tf.convert_to_tensor(abs_boundary_det)
 
-def pre_box_loss_by_msk(gt_mask, det_map, score_map, org_size, det_map_fom='pet',
+def pre_box_loss_by_msk(gt_mask, det_map, score_map, recf_size, det_map_fom='pet',
   lb_thr=0.2, use_cross=True, use_pixel=True, mag_f='smooth', sigma=1.0):
   """
     Args:
@@ -571,10 +573,10 @@ def pre_box_loss_by_msk(gt_mask, det_map, score_map, org_size, det_map_fom='pet'
       det_map: deta value tensor ((1),h,w,4)
       det_map_fom: det_map format, can be
         'pet': [dy1, dx1, dy2, dx2] percentage difference value in [-1.0,1.0]
-        'pix': [dy1, dx1, dy2, dx2] pixel difference value
+        'pix': [dy1, dx1, dy2, dx2] pixel unit difference value
         'yxhw':[dy1, dx1, dh, dw] in float
       score_map: scores value tensor ((1),h,w,num_class)
-      org_size: original image size (h,w)
+      recf_size: receptive field size (rf_h,rf_w,stride_y,stride_x)
       lb_thr: lower boundary threshold in [0,0.5]
         calculate box with positive pixels higher than wh*wx*lb_thr
       use_pixel: 
@@ -588,16 +590,20 @@ def pre_box_loss_by_msk(gt_mask, det_map, score_map, org_size, det_map_fom='pet'
     Return:
       loss value
   """
+  assert(recf_size.shape[0]>=4)
   num_class = score_map.shape[-1] - 1
   det_map_fom = det_map_fom.lower()
   if(not(det_map_fom in ['pet','pix','yxhw'])):det_map_fom='pet'
   pred_map = tf.reshape(det_map,det_map.shape[-3:])
   lb_thr = min(max(lb_thr,0.0),0.5)
+
   # convert gt_mask to [0,num_class-1]
-  gt_mask = tf.cast(gt_mask,tf.int32)
-  gt_mask = tf.where(gt_mask>num_class,num_class,gt_mask)
-  
-  cube_h,cube_w = org_size[0]/pred_map.shape[-3],org_size[1]/pred_map.shape[-2]
+  if(tf.reduce_max(gt_mask)>num_class):
+    gt_mask = tf.cast(tf.cast(gt_mask,tf.bool),tf.int32)
+  else:
+    gt_mask = tf.cast(gt_mask,tf.int32)
+
+  cube_h,cube_w,stride_y,stride_x = float(recf_size[0]),float(recf_size[1]),int(recf_size[2]),int(recf_size[3])
   icube_h,icube_w = int(cube_h), int(cube_w)
   min_pxls = int((icube_h*icube_w)*lb_thr*lb_thr)
   # min_pxls = min(int(icube_w*lb_thr),int(icube_h*lb_thr))
@@ -614,30 +620,39 @@ def pre_box_loss_by_msk(gt_mask, det_map, score_map, org_size, det_map_fom='pet'
   elif(tmp==2):
     gt_mask_4d = tf.reshape(gt_mask,[1,]+gt_mask.shape+[1])
   else:gt_mask_4d = gt_mask
-  gt_mask_4d = tf.image.resize(gt_mask_4d,[icube_h*pred_map.shape[-3],icube_w*pred_map.shape[-2]],'nearest')
+  # gt_mask_4d = tf.image.resize(gt_mask_4d,[icube_h*pred_map.shape[-3],icube_w*pred_map.shape[-2]],'nearest')
   gt_mask_4d = tf.image.extract_patches(
     images=gt_mask_4d,
     sizes=[1,icube_h,icube_w,1],
-    strides=[1,icube_h,icube_w,1],
+    strides=[1,stride_y,stride_x,1],
     rates=[1,1,1,1],
     padding='SAME',
   )
-
+  gt_mask_4d = gt_mask_4d[0,0:score_map.shape[-3],0:score_map.shape[-2],:]
   # 2D inc method
-  gt_mask_4d = tf.reshape(gt_mask_4d, pred_map.shape[-3:-1]+[icube_h,icube_w])
+  gt_mask_4d = tf.reshape(gt_mask_4d, score_map.shape[-3:-1]+[icube_h,icube_w])
   gt_mask_4d_b = tf.cast(tf.cast(gt_mask_4d,tf.bool),tf.int32)
   ob_gt_mask = tf.reduce_sum(gt_mask_4d_b,axis=[-1,-2])
   boxs_main = tf.where(tf.math.logical_and(ob_gt_mask >= min_pxls, ob_gt_mask <= max_pxls))
-  pred_map_select = tf.gather_nd(pred_map,boxs_main)
   # label loss
-  tmp = tf.reduce_max(gt_mask_4d,axis=[-1,-2]).numpy()
-  # sometimes [ob_gt_mask<min_pxls] will got error
-  tmp[(ob_gt_mask<min_pxls).numpy()]=0
+  lmsk = tf.reduce_max(gt_mask_4d,axis=[-1,-2]).numpy()
+  
+  if(boxs_main.shape[0]==0 or boxs_main.shape[0]==None):
+    # if can't find boxs_main, use max sub box
+    # find max gtbox to avoid gradient disappearing
+    tmp = tf.math.reduce_max(ob_gt_mask)
+    boxs_main = tf.where(ob_gt_mask==tmp)
+    lmsk[(ob_gt_mask!=tmp).numpy()]=0
+  else:
+    # if can find boxs_main, set ob_gt_mask<min_pxls as negtave
+    # sometimes [ob_gt_mask<min_pxls] will got error
+    lmsk[(ob_gt_mask<min_pxls).numpy()]=0
   label_loss = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(
     logits=tf.reshape(score_map,[-1,score_map.shape[-1]]), 
-    labels=tf.reshape(tmp,[-1])))
+    labels=tf.reshape(lmsk,[-1])))
   if(use_pixel):
     # pixel level difference
+    pred_map_select = tf.gather_nd(pred_map,boxs_main)
     pred_mask = np.zeros(gt_mask.shape,dtype=np.int32)
     det_cx,det_cy = tf.meshgrid(
       tf.range(0,pred_map.shape[-2]+2,dtype=tf.float32)*cube_w,
@@ -675,7 +690,6 @@ def pre_box_loss_by_msk(gt_mask, det_map, score_map, org_size, det_map_fom='pet'
     ymax,xmax = icube_h-ymin,icube_w-xmin
     cnt = 0
     hit = False
-    if(det_map_fom=='pet'):pred_map
     for i in range(boxs_main.shape[0]):
       hit = False
       fy,fx = boxs_main[i]
@@ -719,42 +733,48 @@ def pre_box_loss_by_msk(gt_mask, det_map, score_map, org_size, det_map_fom='pet'
           hit=True
       if(hit):cnt+=1
     if(cnt>0):bxloss /= cnt
+      
   return bxloss,label_loss
 
-def gen_gt_from_msk(gt_mask,dst_size,num_class,lb_thr=0.2):
+def gen_gt_from_msk(gt_mask,tar_size,recf_size,num_class,lb_thr=0.2):
   """
     Generate gt from original mask.
     Args:
       gt_mask: tensor ((1),hm,wm,(1)) mask.
-      dst_size: destination image size (h,w).
+      tar_size: target output map size [h,w]
+      recf_size: receptive field size (rf_h,rf_w,stride_y,stride_x)
       lb_thr: lower boundary threshold in [0,0.5]
         calculate box with positive pixels higher than wh*wx*lb_thr
       num_class: number of class, include bg class
     Return:
       binary map in [0,numclass-1] with shape=dst_size, int32
   """
+  assert(recf_size.shape[0]>=4)
   num_class-=1
-  gt_mask = tf.cast(gt_mask,tf.int32)
-  gt_mask = tf.where(gt_mask>num_class,num_class,gt_mask)
+  # convert gt_mask to [0,num_class-1]
+  if(tf.reduce_max(gt_mask)>num_class):
+    gt_mask = tf.cast(tf.cast(gt_mask,tf.bool),tf.int32)
+  else:
+    gt_mask = tf.cast(gt_mask,tf.int32)
+  lb_thr = min(max(lb_thr,0.0),0.5)
   tmp = len(gt_mask.shape)
   if(tmp==3):gt_mask = tf.reshape(gt_mask,[1,]+gt_mask.shape)
   elif(tmp==2):gt_mask = tf.reshape(gt_mask,[1,]+gt_mask.shape+[1])
   else:gt_mask = gt_mask
 
-  cube_h,cube_w = gt_mask.shape[-3]/dst_size[0],gt_mask.shape[-2]/dst_size[1]
+  cube_h,cube_w,stride_y,stride_x = float(recf_size[0]),float(recf_size[1]),int(recf_size[2]),int(recf_size[3])
   icube_h,icube_w = int(cube_h), int(cube_w)
   min_pxls = int((icube_h*icube_w)*lb_thr)
   if(icube_h==1 and icube_w==1):return gt_mask
 
-  gt_mask = tf.image.resize(gt_mask,[icube_h*dst_size[0],icube_w*dst_size[1]],'nearest')
   gt_mask = tf.image.extract_patches(
     images=gt_mask,
     sizes=[1,icube_h,icube_w,1],
-    strides=[1,icube_h,icube_w,1],
+    strides=[1,stride_y,stride_x,1],
     rates=[1,1,1,1],
     padding='SAME',
   )
-  gt_mask = tf.reshape(gt_mask,gt_mask.shape[-3:])
+  gt_mask = gt_mask[0,0:tar_size[0],0:tar_size[1],:]
   gt_mask_b = tf.cast(tf.cast(gt_mask,tf.bool),tf.int32)
   gt_mask_b = tf.reduce_sum(gt_mask_b,axis=-1)
   gt_mask = tf.reduce_max(gt_mask,axis=-1).numpy()

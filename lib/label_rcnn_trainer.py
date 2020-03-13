@@ -21,7 +21,7 @@ class LRCNNTrainer(Trainer):
     # super(FRCNNTrainer,self).__init__(kwargs)
 
   def train_action(self,x_single,y_single,step,logger):
-    with tf.GradientTape(persistent=False) as tape:
+    with tf.GradientTape(persistent=True) as tape:
       tape.watch(self.model.trainable_variables)
       y_pred = self.model(x_single)
       loss_value = self.loss(y_single, y_pred)
@@ -31,6 +31,7 @@ class LRCNNTrainer(Trainer):
     self.opt.apply_gradients(zip(grads, self.model.trainable_variables))
 
     if(not(self.isdebug)):
+      hit = False
       auto_scalar(loss_value,step,"Loss")
       for itm in self.model.trainable_variables:
         auto_scalar(tf.reduce_mean(itm),step,itm.name)
@@ -38,6 +39,14 @@ class LRCNNTrainer(Trainer):
         auto_scalar(tf.reduce_mean(y_pred[itn]),step,itn)
       for iname in self.loss.loss_detail:
         auto_scalar(self.loss.loss_detail[iname],step,"Loss detail: {}".format(iname))
+      for i in range(len(grads)):
+        if(tf.math.is_nan(tf.reduce_mean(grads[i]))):
+          logger.write("Nan in {} in step {}".format(self.model.trainable_variables[i].name,step))
+          hit = True
+          for iname in self.loss.loss_detail:
+            logger.write("Gradient in loss {} is:".format(iname))
+            logger.write(tf.reduce_mean(tape.gradient(self.loss.loss_detail[iname], self.model.trainable_variables))+'\n')
+      if(hit):return -1
     return 0
         
   def batch_callback(self,batch_size,logger,time_usage):
@@ -50,7 +59,7 @@ class LRCNNTrainer(Trainer):
     self.cur_loss = 0
     return 0
 
-  def draw_gt_pred_box(self,score,bbox,gt_box,image):
+  def draw_gt_pred_box(self,score,bbox,recf_size,gt_box,image):
     imgh = float(image.shape[-3])
     imgw = float(image.shape[-2])
     feat_size = score.shape[-3:-1]
@@ -63,7 +72,7 @@ class LRCNNTrainer(Trainer):
 
     if(self.gtformat in ['xywh','yxyx']):
       # draw gt box frist
-      image = draw_grid_in_gt(feat_size,gt_box,image)
+      image = draw_grid_in_gt(recf_size,gt_box,image)
     else:
       image = draw_msk_in_gt(gt_box,image)
 
@@ -77,14 +86,14 @@ class LRCNNTrainer(Trainer):
       image = tf.image.draw_bounding_boxes(image,tf.reshape(l1box,[1,-1,4]),col)
     if(self.gen_box_by_gt):
       if(self.gtformat in ['xywh','yxyx']):
-        # or draw box in red forcibly
-        score = gen_label_from_gt(feat_size,gt_box,[imgh,imgw])
+        # or forcibly draw box in red color
+        score = gen_label_from_gt(feat_size,recf_size,gt_box,[imgh,imgw])
         score = tf.reshape(score,[-1])
         l1box = tf.reshape(tf.gather(bbox,tf.where(score>0)),[-1,4])
         l1box = tf.stack([l1box[:,0]/imgh,l1box[:,1]/imgw,l1box[:,2]/imgh,l1box[:,3]/imgw],axis=1)
         image = tf.image.draw_bounding_boxes(image,tf.reshape(l1box,[1,-1,4]),tf.convert_to_tensor([[255.0,0.0,0.0]]))
       else:
-        msk = gen_gt_from_msk(gt_box,feat_size,score.shape[-1])
+        msk = gen_gt_from_msk(gt_box,feat_size,recf_size,score.shape[-1])
         msk = tf.reshape(msk,[-1])
         l1box = bbox[msk>0]
         l1box = tf.stack([l1box[:,0]/imgh,l1box[:,1]/imgw,l1box[:,2]/imgh,l1box[:,3]/imgw],axis=1)
@@ -111,9 +120,9 @@ class LRCNNTrainer(Trainer):
       auto_scalar(l2op,step,"L2 overlap")
       auto_scalar(l3op,step,"L3 overlap")
       
-    bx1_img = self.draw_gt_pred_box(y_pred["l1_score"],y_pred["l1_bbox"], label_gt, x_single)
-    bx2_img = self.draw_gt_pred_box(y_pred["l2_score"],y_pred["l2_bbox"], label_gt, x_single)
-    bx3_img = self.draw_gt_pred_box(y_pred["l3_score"],y_pred["l3_bbox"], label_gt, x_single)
+    bx1_img = self.draw_gt_pred_box(y_pred["l1_score"],y_pred["l1_bbox"],y_pred["l1_rf_s"], label_gt, x_single)
+    bx2_img = self.draw_gt_pred_box(y_pred["l2_score"],y_pred["l2_bbox"],y_pred["l2_rf_s"], label_gt, x_single)
+    bx3_img = self.draw_gt_pred_box(y_pred["l3_score"],y_pred["l3_bbox"],y_pred["l3_rf_s"], label_gt, x_single)
 
     if(tf.reduce_max(bx1_img)>1.0):
       bx1_img = bx1_img/256.0
