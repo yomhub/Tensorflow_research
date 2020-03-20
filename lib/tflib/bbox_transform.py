@@ -566,7 +566,7 @@ def pre_box_loss_by_det(gt_box, det_map, recf_size, sigma=1.0, use_cross=True, m
   return tf.convert_to_tensor(abs_boundary_det)
 
 def pre_box_loss_by_msk(gt_mask, det_map, score_map, recf_size, det_map_fom='pet',
-  lb_thr=0.2, use_cross=True, use_pixel=True, mag_f='smooth', sigma=1.0):
+  lb_thr=0.2, use_cross=True, use_pixel=True, norl = True, mag_f='smooth', sigma=1.0):
   """
     Args:
       gt_mask: tensor ((1),hm,wm,(1)) mask.
@@ -587,6 +587,7 @@ def pre_box_loss_by_msk(gt_mask, det_map, score_map, recf_size, det_map_fom='pet
         string: 'sigmoid', apply sigmoid on loss function 
         tf.keras.layers.Lambda: apply input Lambda object
         others, don't apply any magnification function
+      norl: True to use normalization difference
     Return:
       loss value
   """
@@ -647,6 +648,7 @@ def pre_box_loss_by_msk(gt_mask, det_map, score_map, recf_size, det_map_fom='pet
     # if can find boxs_main, set ob_gt_mask<min_pxls as negtave
     # sometimes [ob_gt_mask<min_pxls] will got error
     lmsk[(ob_gt_mask<min_pxls).numpy()]=0
+
   label_loss = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(
     logits=tf.reshape(score_map,[-1,score_map.shape[-1]]), 
     labels=tf.reshape(lmsk,[-1])))
@@ -670,31 +672,57 @@ def pre_box_loss_by_msk(gt_mask, det_map, score_map, recf_size, det_map_fom='pet
     oara = tf.where(gt_mask==1)
     iara = tf.where(gt_mask==2)
     bxloss = tf.cast(tf.math.abs(iara.shape[0]-oara.shape[0]),tf.float32)
+    if(norl):bxloss /= cube_h*cube_w
   else:
     # coordinate difference
-    if(type(mag_f)==str):
-      mag_f = mag_f.lower()
-      if(mag_f=='tanh'):
-        mag_f = tf.keras.layers.Lambda(lambda x: tf.math.sigmoid(x))
-      elif(mag_f=='smooth'):
-        sigma_2 = sigma**2
-        mag_f = tf.keras.layers.Lambda(lambda x: tf.where(x > (1. / x),x - (0.5 / sigma_2),tf.pow(x, 2) * (sigma_2 / 2.)))
+    if(norl):
+      # use normalization
+      if(type(mag_f)==str):
+        mag_f = mag_f.lower()
+        if(mag_f=='tanh'):
+          mag_f_y = tf.keras.layers.Lambda(lambda x:tf.math.sigmoid(x)/cube_h)
+          mag_f_x = tf.keras.layers.Lambda(lambda x:tf.math.sigmoid(x)/cube_w)
+        elif(mag_f=='smooth'):
+          sigma_2 = sigma**2
+          mag_f_y = tf.keras.layers.Lambda(lambda x:tf.where(x > (1. / x),x - (0.5 / sigma_2),tf.pow(x, 2) * (sigma_2 / 2.))/cube_h)
+          mag_f_x = tf.keras.layers.Lambda(lambda x:tf.where(x > (1. / x),x - (0.5 / sigma_2),tf.pow(x, 2) * (sigma_2 / 2.))/cube_w)
+        else:
+          mag_f_y = tf.keras.layers.Lambda(lambda x:x/cube_h)
+          mag_f_x = tf.keras.layers.Lambda(lambda x:x/cube_w)
+      elif(mag_f == None):
+        mag_f_y = tf.keras.layers.Lambda(lambda x:x/cube_h)
+        mag_f_x = tf.keras.layers.Lambda(lambda x:x/cube_w)
       else:
-        mag_f = tf.keras.layers.Lambda(lambda x:x)
-    elif(mag_f == None):
-      mag_f = tf.keras.layers.Lambda(lambda x:x)
+        mag_f_y = tf.keras.layers.Lambda(lambda x:mag_f(x)/cube_h)
+        mag_f_x = tf.keras.layers.Lambda(lambda x:mag_f(x)/cube_w)
+    else:
+      if(type(mag_f)==str):
+        mag_f = mag_f.lower()
+        if(mag_f=='tanh'):
+          mag_f_y = tf.keras.layers.Lambda(lambda x: tf.math.sigmoid(x))
+          mag_f_x = mag_f_y
+        elif(mag_f=='smooth'):
+          sigma_2 = sigma**2
+          mag_f_y = tf.keras.layers.Lambda(lambda x: tf.where(x > (1. / x),x - (0.5 / sigma_2),tf.pow(x, 2) * (sigma_2 / 2.)))
+          mag_f_x = mag_f_y
+        else:
+          mag_f_y = tf.keras.layers.Lambda(lambda x:x)
+          mag_f_x = mag_f_y
+      elif(mag_f == None):
+        mag_f_y = tf.keras.layers.Lambda(lambda x:x)
+        mag_f_x = mag_f_y
+      else:
+        mag_f_y = mag_f
+        mag_f_x = mag_f
     bxloss = 0.0
     gt_mask_4d = tf.gather_nd(gt_mask_4d,boxs_main)
-    pos_ins = tf.where(gt_mask_4d>0)
+    pos_ins = tf.stop_gradient(tf.where(gt_mask_4d>0))
     ymin,xmin = int(icube_h*lb_thr),int(icube_w*lb_thr)
     ymax,xmax = icube_h-ymin,icube_w-xmin
-    cnt = 0
-    hit = False
     for i in range(boxs_main.shape[0]):
-      hit = False
       fy,fx = boxs_main[i]
-      my2,mx2 = tf.reduce_max(pos_ins[pos_ins[:,0]==i][:,1:3],axis=0)+1
-      my1,mx1 = tf.reduce_min(pos_ins[pos_ins[:,0]==i][:,1:3],axis=0)+1
+      my2,mx2 = tf.reduce_max(pos_ins[pos_ins[:,0]==i][:,1:3],axis=0)
+      my1,mx1 = tf.reduce_min(pos_ins[pos_ins[:,0]==i][:,1:3],axis=0)
       dfy,dfx = 0,0
       if(my2<ymin):dfy=-1
       elif(my1>ymax):dfy=1
@@ -704,35 +732,18 @@ def pre_box_loss_by_msk(gt_mask, det_map, score_map, recf_size, det_map_fom='pet
       if(dfy==0 and dfx==0):
         my2,my1 = float(icube_h-my2),float(my1)
         mx2,mx1 = float(icube_w-mx2),float(mx1)
-        if(my1>0):
-          bxloss += mag_f(tf.math.abs(pred_map[fy,fx,0]-my1))
-          hit=True
-        if(my2>0):
-          bxloss += mag_f(tf.math.abs(pred_map[fy,fx,2]+my2)) # pdx2 should be negative
-          hit=True
-        if(mx1>0):
-          bxloss += mag_f(tf.math.abs(pred_map[fy,fx,1]-mx1))
-          hit=True
-        if(mx2>0):
-          bxloss += mag_f(tf.math.abs(pred_map[fy,fx,3]+mx2))
-          hit=True
-      else:
+        bxloss += mag_f_y(tf.math.abs(pred_map[fy,fx,0]-my1))
+        bxloss += mag_f_y(tf.math.abs(pred_map[fy,fx,2]+my2)) # pdx2 should be negative
+        bxloss += mag_f_x(tf.math.abs(pred_map[fy,fx,1]-mx1))
+        bxloss += mag_f_x(tf.math.abs(pred_map[fy,fx,3]+mx2))
+      elif(lmsk[fy,fx]>0):
         fy+=dfy
         fx+=dfx
-        if(dfy>0):
-          bxloss += mag_f(tf.math.abs(pred_map[fy,fx,0]+float(icube_h-my1)))
-          hit=True
-        elif(dfy<0):
-          bxloss += mag_f(tf.math.abs(pred_map[fy,fx,2]-float(my2)))
-          hit=True
-        if(dfx>0):
-          bxloss += mag_f(tf.math.abs(pred_map[fy,fx,1]+float(icube_w-mx1)))
-          hit=True
-        elif(dfx<0):
-          bxloss += mag_f(tf.math.abs(pred_map[fy,fx,3]-float(mx2)))
-          hit=True
-      if(hit):cnt+=1
-    if(cnt>0):bxloss /= cnt
+        if(dfy>0):bxloss += mag_f_y(tf.math.abs(pred_map[fy,fx,0]+float(icube_h-my1)))
+        elif(dfy<0):bxloss += mag_f_y(tf.math.abs(pred_map[fy,fx,2]-float(my2)))
+        if(dfx>0):bxloss += mag_f_x(tf.math.abs(pred_map[fy,fx,1]+float(icube_w-mx1)))
+        elif(dfx<0):bxloss += mag_f_x(tf.math.abs(pred_map[fy,fx,3]-float(mx2)))
+    if(boxs_main.shape[0]>0):bxloss /= float(boxs_main.shape[0])
       
   return bxloss,label_loss
 

@@ -82,3 +82,40 @@ def plt_draw_lines(funcs,xarry=None,cols=None,fig_size=None,fig_num=None,save_na
   for i in range(len(funcs)):
     plt.plot(xarry,funcs[i],tcols[i],linewidth=1.0,linestyle=line_sty[i])
   plt.show()
+
+def rf_helper(net_list,ord_len,panding=True):
+  """
+    Args:
+      net_list: list pramaters of network
+        [kernel size, stride size]
+      ord_num: int, coordinate range
+      panding: True or False
+    Print coordinate in each layer
+  """
+  if(type(net_list)!=list or len(net_list)<2):return
+  panding = bool(panding)
+  ord_len = int(ord_len)
+  rf_st = [[1,1]]
+  cod_table = np.arange(ord_len,dtype=np.int)
+  cod_table = np.stack((cod_table,cod_table),axis=-1)
+  cod_table = [cod_table.tolist()]
+  for i in range(len(net_list)):
+    rf,st = rf_st[i]
+    ksize,strsize = net_list[i]
+    crf = rf + (ksize-1)*st
+    cst = st*strsize
+    rf_st.append([crf,cst])
+
+    p_harf_k = int(ksize/2) if((ksize-int(ksize/2)*2)!=0)else int(ksize/2)-1
+    harf_k = ksize - 1 - p_harf_k
+    max_cod = len(cod_table[i])-1
+    stp = 0 if panding else harf_k
+    edp = max_cod if panding else max_cod - harf_k
+    tmp = []
+    while(stp<edp):
+      c_ctp = max(0,stp-p_harf_k)
+      c_edp = min(max_cod,stp + harf_k)
+      tmp.append([cod_table[i][c_ctp][0],cod_table[i][c_edp][1]])
+      stp+=strsize
+    cod_table.append(tmp)
+  return rf_st,cod_table

@@ -77,8 +77,8 @@ class LRCNNTrainer(Trainer):
       image = draw_msk_in_gt(gt_box,image)
 
     score = tf.reshape(score,[-1,score.shape[-1]])
-    score = tf.nn.softmax(score)
-    l1box = tf.reshape(tf.gather(bbox,tf.where(score>0)),[-1,4])
+    score = tf.math.argmax(score,axis=-1)
+    l1box = bbox[score>0]
 
     if(l1box.shape[0]!=None and l1box.shape[0]>0):
       # if we have box, draw it

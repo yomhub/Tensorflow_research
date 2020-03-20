@@ -9,7 +9,7 @@ from lib.model.label_rcnn import Label_RCNN, LRCNNLoss
 from lib.frcnn_trainer import FRCNNTrainer
 from lib.tflib.bbox_transform import *
 from lib.tflib.evaluate_tools import *
-from lib.tflib.log_tools import auto_image,save_image
+from lib.tflib.log_tools import auto_image,save_image,rf_helper
 from lib.dataloader.total import TTText
 # 
 
@@ -54,14 +54,87 @@ def plt_demo():
   plt.plot(xarry,y3(xarry),color='green',linewidth=1.0,linestyle='-.')
   plt.show()
 
+def rf_print():
+  rf_st,cod_table = rf_helper(
+    [[3,1],[3,1],[2,2],
+    [3,1],[3,1],[2,2],
+    [3,1],[3,1],[3,1],[2,2],
+    [3,1],[3,1],[3,1],[2,2],
+    [3,1],[3,1],[3,1],[2,2],
+    [3,1],
+    ],
+    720
+    )
+  for i in range(len(cod_table)):
+    print("Tab in {}: RF = {}, ST = {}, Outsize = {}".format(
+      i,rf_st[i][0],rf_st[i][1],len(cod_table[i])))
+    for j in range(min(10,len(cod_table[i]))):
+      sys.stdout.write(str(cod_table[i][j])+"||")
+    sys.stdout.write('\n')
+    for j in range(len(cod_table[i])-10,len(cod_table[i])):
+      sys.stdout.write(str(cod_table[i][j])+"||")
+    sys.stdout.write('\n')
+
 if __name__ == "__main__":
-  mydatalog = TTText(__DEF_TTT_DIR,out_size=[360,640])
-  x_train, y_train = mydatalog.read_train_batch(10)
-  model = Label_RCNN()
-  model(tf.zeros((1,360,640,3)))
-  pred = model(x_train[0])
-  for i in range(len(y_train)):
-    ret = pre_box_loss_by_msk(gt_mask=y_train[i],det_map=pred["l1_bbox_det"],score_map=pred["l1_score"],recf_size=pred["l1_rf_s"],det_map_fom='pix',use_pixel=False)
-    ret = pre_box_loss_by_msk(gt_mask=y_train[i],det_map=pred["l2_bbox_det"],score_map=pred["l2_score"],recf_size=pred["l2_rf_s"],det_map_fom='pix',use_pixel=False)
-    ret = pre_box_loss_by_msk(gt_mask=y_train[i],det_map=pred["l3_bbox_det"],score_map=pred["l3_score"],recf_size=pred["l3_rf_s"],det_map_fom='pix',use_pixel=False)
+  # mydatalog = TTText(__DEF_TTT_DIR,out_size=[360,640])
+  # x_train, y_train = mydatalog.read_train_batch(10)
+  # model = Label_RCNN()
+  # model(tf.zeros((1,360,640,3)))
+  # pred = model(x_train[0])
+  # rf_print()
+  filt = np.ones((3,3,1,1),dtype=np.float)
+  # filt = np.array([[1.0,1.0,1.0],[1.0,1.0,1.0],[1.0,1.0,1.0]]).reshape([3,3,1,1])
+  filt1 = np.ones((1,1,1,1),dtype=np.float)
+  tmp = np.zeros((1,360,640,1),dtype=np.float)
+  # tmp = np.zeros((1,720,1280,1),dtype=np.float)
+  # tmp1 = np.arange(1,641,dtype=np.float).reshape([1,640])
+  # tmp2 = np.arange(0,360,dtype=np.float).reshape([360,1])
+  # tmp = (tmp2*640)+tmp1
+  # tmp = tmp.reshape((1,360,640,1))
+  # tmp[0,0:153,0:153,0] = 1.0
+  tmp_sp = tf.image.extract_patches(
+    images=tmp,
+    sizes=[1,276,276,1],
+    strides=[1,32,32,1],
+    rates=[1,1,1,1],
+    padding='SAME',
+  )
+  tmp_sp = tf.reshape(tmp_sp,tmp_sp.shape[-3:-1]+[276,276]).numpy().astype(np.int)
+  # for i in range(tmp_sp.shape[0]):
+  #   np.savetxt('y/sp_y{}_x0.out'.format(i),tmp_sp[i,0],fmt='%d')
+  # for i in range(tmp_sp.shape[1]):
+  #   np.savetxt('x/sp_y0_x{}.out'.format(i),tmp_sp[0,i],fmt='%d')
+  tmp_sp_b = tf.reduce_sum(tmp_sp,axis=-1)
+  # B1
+  tmp = tf.nn.conv2d(tmp,filters=filt,strides=[1,1,1,1],padding="SAME") # 3 1
+  tmp = tf.nn.conv2d(tmp,filters=filt,strides=[1,1,1,1],padding="SAME") # 5 1
+  tmp = tf.nn.max_pool2d(tmp,2,2,'VALID') # 6 2
+  # B2
+  tmp = tf.nn.conv2d(tmp,filters=filt,strides=[1,1,1,1],padding="SAME") # 10 2
+  tmp = tf.nn.conv2d(tmp,filters=filt,strides=[1,1,1,1],padding="SAME") # 14 2
+  tmp = tf.nn.max_pool2d(tmp,2,2,'VALID') # 16 4
+    # B3
+  tmp = tf.nn.conv2d(tmp,filters=filt,strides=[1,1,1,1],padding="SAME") # 24 4
+  tmp = tf.nn.conv2d(tmp,filters=filt,strides=[1,1,1,1],padding="SAME") # 32 4
+  tmp = tf.nn.conv2d(tmp,filters=filt,strides=[1,1,1,1],padding="SAME") # 40 4
+  tmp = tf.nn.max_pool2d(tmp,2,2,'VALID') # 44 8
+    # B4
+  tmp = tf.nn.conv2d(tmp,filters=filt,strides=[1,1,1,1],padding="SAME") # 60 8
+  tmp = tf.nn.conv2d(tmp,filters=filt,strides=[1,1,1,1],padding="SAME") # 76 8
+  tmp = tf.nn.conv2d(tmp,filters=filt,strides=[1,1,1,1],padding="SAME") # 92 8
+  tmp = tf.nn.max_pool2d(tmp,2,2,'VALID') # 100 16
+    # B5
+  tmp = tf.nn.conv2d(tmp,filters=filt,strides=[1,1,1,1],padding="SAME") # 132 16
+  tmp = tf.nn.conv2d(tmp,filters=filt,strides=[1,1,1,1],padding="SAME") # 164 16
+  tmp = tf.nn.conv2d(tmp,filters=filt,strides=[1,1,1,1],padding="SAME") # 196 16
+  tmp = tf.nn.max_pool2d(tmp,2,2,'VALID') # 212 32
+  # N
+  tmp = tf.nn.conv2d(tmp,filters=filt,strides=[1,1,1,1],padding="SAME")
+  tmp = tf.nn.conv2d(tmp,filters=filt1,strides=[1,1,1,1],padding="SAME")
+  # 276,276,32,32
+
+  # for i in range(len(y_train)):
+  #   ret = pre_box_loss_by_msk(gt_mask=y_train[i],det_map=pred["l1_bbox_det"],score_map=pred["l1_score"],recf_size=pred["l1_rf_s"],det_map_fom='pix',use_pixel=False)
+  #   ret = pre_box_loss_by_msk(gt_mask=y_train[i],det_map=pred["l2_bbox_det"],score_map=pred["l2_score"],recf_size=pred["l2_rf_s"],det_map_fom='pix',use_pixel=False)
+  #   ret = pre_box_loss_by_msk(gt_mask=y_train[i],det_map=pred["l3_bbox_det"],score_map=pred["l3_score"],recf_size=pred["l3_rf_s"],det_map_fom='pix',use_pixel=False)
   print('end\n')

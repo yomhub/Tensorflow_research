@@ -14,8 +14,8 @@ from lib.label_rcnn_trainer import LRCNNTrainer
 from lib.tflib.evaluate_tools import draw_boxes
 from lib.tflib.log_tools import save_image
 
-__DEF_INDEX = 1
-__DEF_IMG_SIZE = [[1280,720],[int(1280/2),int(720/2)]]
+__DEF_INDEX = 2
+__DEF_IMG_SIZE = [[1280,720],[int(1280/2),int(720/2)],[640,640]]
 
 __DEF_LOCAL_DIR = os.path.split(__file__)[0]
 __DEF_DATA_DIR = os.path.join(__DEF_LOCAL_DIR,'mydataset')
@@ -40,7 +40,7 @@ if __name__ == "__main__":
   parser.add_argument('--batch', type=int, help='Batch size.',default=20)
   parser.add_argument('--cross', help='Set --cross if want to cross box loss.', action="store_true")
   # parser.add_argument('--savestep', type=int, help='Batch size.',default=20)
-  parser.add_argument('--learnrate', type=float, help='Learning rate.',default=0.001)
+  parser.add_argument('--learnrate', type=float, help='Learning rate.',default=0.007)
   args = parser.parse_args()
   time_start = datetime.now()
   print("Start when {}.\n".format(time_start.strftime("%Y%m%d-%H%M%S")))
@@ -88,10 +88,11 @@ if __name__ == "__main__":
     loss = RCNNLoss(cfg=cfg,cfg_name="TRAIN",gtformat=gtformat)
   else:
     # label RCNN
+    dif_nor = False
     tkname = "{}_with_{}_{}".format(args.name,args.dataset,args.opt) if(args.name!=None) else "LRCNN_with_{}_{}".format(args.dataset,args.opt)
     trainer = LRCNNTrainer(isdebug=isdebug,task_name=tkname,gtformat=gtformat)
-    model = Label_RCNN(num_classes=2)
-    loss = LRCNNLoss(imge_size=[args.datay,args.datax],gtformat=gtformat)
+    model = Label_RCNN(num_classes=2,dif_nor=dif_nor)
+    loss = LRCNNLoss(imge_size=[args.datay,args.datax],gtformat=gtformat,dif_nor=dif_nor)
   
   if(not(isdebug) and args.load):
     last_model = trainer.load(model)
@@ -107,8 +108,8 @@ if __name__ == "__main__":
   if(isdebug):
     for i in range(3):
       x_train, y_train = mydatalog.read_train_batch(3)
-      sta = trainer.fit(x_train,y_train,model,loss,optimizer)
-      if(sta==-1):
+      ret = trainer.fit(x_train,y_train,model,loss,optimizer)
+      if(ret==-1):
         break
   else:
     islog=False
@@ -140,8 +141,9 @@ if __name__ == "__main__":
       trainer.evaluate(x_train[0:2],y_train[0:2])
       # inc = np.where(opt_schedule==i)
       if(i==5):
-        optimizer = tf.keras.optimizers.SGD(learning_rate=args.learnrate)
-        trainer.set_trainer(opt=optimizer)
+        trainer.set_trainer(opt=tf.keras.optimizers.Adam(learning_rate=0.005))
+      if(i==10):
+        trainer.set_trainer(opt=tf.keras.optimizers.Adam(learning_rate=0.001))
       # if(i%10==0):
       #   trainer.set_trainer(data_count=mydatalog._init_conter)
       #   trainer.save()
