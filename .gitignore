@@ -17,3 +17,6 @@ lab.py
 run.sh
 *.jpg
 *.png
+elog
+/elog
+**/elog
