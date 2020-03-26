@@ -8,7 +8,7 @@ from lib.dataloader.svt import SVT
 from lib.dataloader.total import TTText
 from lib.model.config import cfg
 from lib.model.faster_rcnn import Faster_RCNN, RCNNLoss
-from lib.model.label_rcnn import Label_RCNN, LRCNNLoss
+from lib.model.label_rcnn import Label_RCNN, LRCNNLoss,Label_RCNN_v2, LRCNNLoss_v2
 from lib.frcnn_trainer import FRCNNTrainer
 from lib.label_rcnn_trainer import LRCNNTrainer
 from lib.tflib.evaluate_tools import draw_boxes
@@ -52,12 +52,13 @@ if __name__ == "__main__":
   print("\t Use cross: {}.".format(args.cross))
   print("\t Save network: {}.".format('Yes' if(args.save)else 'No'))
   print("\t Load network: {}.".format('Yes' if(args.load)else 'No'))
-
+  
+  eva_b = 1
   isdebug = args.debug
   # isdebug = True
-  opt_schedule = np.array([0.6,0.8])*args.batch
-  opt_schedule = opt_schedule.astype(np.int)
-  opt_names = ['sgd']
+  # opt_schedule = np.array([0.6,0.8])*args.batch
+  # opt_schedule = opt_schedule.astype(np.int)
+  # opt_names = ['sgd']
   if(args.opt.lower()=='sgd'):
     optimizer = tf.keras.optimizers.SGD(learning_rate=args.learnrate)
   else:
@@ -90,12 +91,12 @@ if __name__ == "__main__":
     # label RCNN
     dif_nor = False
     tkname = "{}_with_{}_{}".format(args.name,args.dataset,args.opt) if(args.name!=None) else "LRCNN_with_{}_{}".format(args.dataset,args.opt)
-    trainer = LRCNNTrainer(isdebug=isdebug,task_name=tkname,gtformat=gtformat)
-    model = Label_RCNN(num_classes=2,dif_nor=dif_nor)
-    loss = LRCNNLoss(imge_size=[args.datay,args.datax],gtformat=gtformat,dif_nor=dif_nor)
+    trainer = LRCNNTrainer(isdebug=isdebug,task_name=tkname,gtformat=gtformat,gen_box_by_gt=False,)
+    model = Label_RCNN_v2(num_classes=2,dif_nor=dif_nor)
+    loss = LRCNNLoss_v2(imge_size=[args.datay,args.datax],gtformat=gtformat,dif_nor=dif_nor)
   
   if(not(isdebug) and args.load):
-    last_model = trainer.load(model)
+    last_model = trainer.load(model,tkname)
     if(last_model!=None):
       model = last_model
       mydatalog.setconter(trainer.data_count)
@@ -137,8 +138,9 @@ if __name__ == "__main__":
         
       ret = trainer.fit(x_train,y_train)
       if(ret==-1):break
-      trainer.evaluate(x_val,y_val)
-      trainer.evaluate(x_train[0:2],y_train[0:2])
+      if(i%eva_b==0):
+        trainer.evaluate(x_val,y_val)
+        trainer.evaluate(x_train[0:2],y_train[0:2])
       # inc = np.where(opt_schedule==i)
       if(i==5):
         trainer.set_trainer(opt=tf.keras.optimizers.Adam(learning_rate=0.005))

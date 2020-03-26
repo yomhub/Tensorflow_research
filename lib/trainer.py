@@ -25,7 +25,7 @@ class Trainer():
     super(Trainer,self).__init__()
     self.isdebug = isdebug if isdebug else False
     self.logs_path = logs_path if task_name == None else os.path.join(logs_path,task_name)
-    self.model_path = model_path if task_name == None else os.path.join(model_path,task_name)
+    self.model_path = model_path
     if(not(self.isdebug)):
       self.logs_path = os.path.join(self.logs_path,datetime.now().strftime("%Y%m%d-%H%M%S"))
     if(not(os.path.exists(self.logs_path))):
@@ -44,6 +44,7 @@ class Trainer():
     self.loss = None
     self.opt = None
     self.eva_step = 0
+    self.task_name = task_name
     
   def log_image(self, tfimg, log_num=10, img_size=None, name=None):
     if(self.isdebug and self.file_writer==None):
@@ -182,37 +183,47 @@ class Trainer():
     if(self.model==None or self.loss==None or self.opt==None):
       return
     now_time = datetime.now().strftime("%Y%m%d-%H%M%S")
-    save_path = os.path.join(self.model_path,now_time)
+    save_path = os.path.join(self.model_path,self.task_name,now_time)
     self.model.save_weights(os.path.join(save_path,'model'))
     # tf.saved_model.save(self.model,save_path)
     txtlog = open(os.path.join(save_path,'log.txt'),'a+',encoding='utf8')
+    txtlog.write("Img X, Y = {} , {}.\n".format(self.model.imgw,self.model.imgh))
     txtlog.write("Step = {} , Batch = {} , Data count = {} .".format(self.current_step,self.batch,self.data_count))
 
-  def load(self,model,loddir=None):
-    if(loddir==None):
-      last_time = None
-      if(not(os.path.exists(self.model_path))):
-        return None
-      for tardir in os.listdir(self.model_path):
-        cur_time = str2time(tardir)
-        if(last_time==None or cur_time>last_time):
-          last_time = cur_time
-      if(last_time==None):
-        return None
-      loddir = os.path.join(self.model_path,last_time.strftime("%Y%m%d-%H%M%S"))
+  def load(self,model,tsk_name=None):
+    # get name
+    if(not(os.path.exists(self.model_path))):return None
+    tsk_list = os.listdir(self.model_path)
+    if(len(tsk_list)==0):return None
+    tsk_name = tsk_name if(tsk_name!=None and tsk_name in tsk_list)else tsk_list[0]
+    # get time
+    last_time = None
+    for tardir in os.listdir(os.path.join(self.model_path,tsk_name)):
+      cur_time = str2time(tardir)
+      if(last_time==None or cur_time>last_time):
+        last_time = cur_time
+    if(last_time==None):
+      return None
+    # final dir
+    loddir = os.path.join(self.model_path,tsk_name,last_time.strftime("%Y%m%d-%H%M%S"))
+
+    # load config
+    try:
+      txtlog = open(os.path.join(loddir,'log.txt'),'r',encoding='utf8')
+      imgw,imgh = str2num(txtlog.readline())
+      self.current_step,self.batch,self.data_count = str2num(txtlog.readline())
+      txtlog.close()
+    except Exception as e:
+      print(str(e))
+      return None
+
+    # model(tf.zeros([1,imgh,imgw,3],dtype=tf.float32))
     try:
       model.load_weights(os.path.join(loddir,'model'))
     except Exception as e:
       print(str(e))
       return None
     self.model = model
-
-    try:
-      txtlog = open(os.path.join(loddir,'log.txt'),'r',encoding='utf8')
-      self.current_step,self.batch,self.data_count = str2num(txtlog.readline())
-      txtlog.close()
-    except Exception as e:
-      print(str(e))
 
     return model
     

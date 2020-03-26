@@ -55,43 +55,45 @@ def plt_demo():
   plt.show()
 
 def rf_print():
-  rf_st,cod_table = rf_helper(
-    [[3,1],[3,1],[2,2],
+  layers = [[3,1],[3,1],[2,2],
     [3,1],[3,1],[2,2],
     [3,1],[3,1],[3,1],[2,2],
     [3,1],[3,1],[3,1],[2,2],
     [3,1],[3,1],[3,1],[2,2],
     [3,1],
-    ],
-    720
-    )
-  for i in range(len(cod_table)):
-    print("Tab in {}: RF = {}, ST = {}, Outsize = {}".format(
-      i,rf_st[i][0],rf_st[i][1],len(cod_table[i])))
+    ]
+  rf_st,cod_table = rf_helper(layers,720)
+  for i in range(1,len(cod_table)):
+    print("Tab in {}: RF = {}, ST = {}, kernel={}, stride={}, Outsize = {}".format(
+      i,rf_st[i][0],rf_st[i][1],layers[i-1][0],layers[i-1][1],len(cod_table[i])))
     for j in range(min(10,len(cod_table[i]))):
       sys.stdout.write(str(cod_table[i][j])+"||")
-    sys.stdout.write('\n')
-    for j in range(len(cod_table[i])-10,len(cod_table[i])):
-      sys.stdout.write(str(cod_table[i][j])+"||")
+    if(len(cod_table[i])>10):
+      sys.stdout.write('\n')
+      for j in range((len(cod_table[i])-10)if(len(cod_table[i])>=20)else 10,len(cod_table[i])):
+        sys.stdout.write(str(cod_table[i][j])+"||")
     sys.stdout.write('\n')
 
-if __name__ == "__main__":
-  # mydatalog = TTText(__DEF_TTT_DIR,out_size=[360,640])
-  # x_train, y_train = mydatalog.read_train_batch(10)
-  # model = Label_RCNN()
-  # model(tf.zeros((1,360,640,3)))
-  # pred = model(x_train[0])
-  # rf_print()
-  filt = np.ones((3,3,1,1),dtype=np.float)
-  # filt = np.array([[1.0,1.0,1.0],[1.0,1.0,1.0],[1.0,1.0,1.0]]).reshape([3,3,1,1])
+def layer_cod_gen():
+  ret = feat_layer_cod_gen(
+    tf.convert_to_tensor([float(44+2*8),float(44+2*8),float(8),float(8)]),
+    tf.convert_to_tensor([100,100],dtype=tf.int64),
+    class_num=4,
+  )
+  return ret
+
+def rf_test():
+  # filt = np.ones((3,3,1,1),dtype=np.float)
+  filt = np.array([[0.1,0.1,0.1],[0.1,0.2,0.1],[0.1,0.1,0.1]]).reshape([3,3,1,1])
   filt1 = np.ones((1,1,1,1),dtype=np.float)
-  tmp = np.zeros((1,360,640,1),dtype=np.float)
+  tmp = np.zeros((1,640,640,1),dtype=np.float)
+  # tmp = np.zeros((1,360,640,1),dtype=np.float)
   # tmp = np.zeros((1,720,1280,1),dtype=np.float)
   # tmp1 = np.arange(1,641,dtype=np.float).reshape([1,640])
   # tmp2 = np.arange(0,360,dtype=np.float).reshape([360,1])
   # tmp = (tmp2*640)+tmp1
   # tmp = tmp.reshape((1,360,640,1))
-  # tmp[0,0:153,0:153,0] = 1.0
+  tmp[0,0:153,0:153,0] = 1.0
   tmp_sp = tf.image.extract_patches(
     images=tmp,
     sizes=[1,276,276,1],
@@ -132,9 +134,30 @@ if __name__ == "__main__":
   tmp = tf.nn.conv2d(tmp,filters=filt,strides=[1,1,1,1],padding="SAME")
   tmp = tf.nn.conv2d(tmp,filters=filt1,strides=[1,1,1,1],padding="SAME")
   # 276,276,32,32
+  return tmp
+  
+def t_pre_box_loss_by_msk():
+  # mydatalog = TTText(__DEF_TTT_DIR,out_size=[360,640])
+  # x_train, y_train = mydatalog.read_train_batch(10)
+  # model = Label_RCNN()
+  # model(tf.zeros((1,360,640,3)))
+  # pred = model(x_train[0])
+  '/am/home/yomcoding/TensorFlow/FasterRCNN/save_model/LRCNN_with_ttt_adam/20200325-203940/model'
 
   # for i in range(len(y_train)):
   #   ret = pre_box_loss_by_msk(gt_mask=y_train[i],det_map=pred["l1_bbox_det"],score_map=pred["l1_score"],recf_size=pred["l1_rf_s"],det_map_fom='pix',use_pixel=False)
   #   ret = pre_box_loss_by_msk(gt_mask=y_train[i],det_map=pred["l2_bbox_det"],score_map=pred["l2_score"],recf_size=pred["l2_rf_s"],det_map_fom='pix',use_pixel=False)
   #   ret = pre_box_loss_by_msk(gt_mask=y_train[i],det_map=pred["l3_bbox_det"],score_map=pred["l3_score"],recf_size=pred["l3_rf_s"],det_map_fom='pix',use_pixel=False)
-  print('end\n')
+
+if __name__ == "__main__":
+  # mydatalog = TTText(__DEF_TTT_DIR,out_size=[360,640])
+  # x_train, y_train = mydatalog.read_train_batch(10)
+  model = Label_RCNN()
+  model(tf.zeros((1,640,640,3)))
+  # pred = model(x_train[0])
+  try:
+    model.load_weights('/am/home/yomcoding/TensorFlow/FasterRCNN/save_model/LRCNN_with_ttt_adam/20200325-203940/model')
+  except Exception as e:
+    print(e)
+  
+  print('end')

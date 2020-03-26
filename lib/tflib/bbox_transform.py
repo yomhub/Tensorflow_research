@@ -115,7 +115,7 @@ def clip_boxes_tf(boxes, im_info, order='xyxy'):
 @tf.function
 def feat_layer_cod_gen(recf_size,feat_size,class_num=1):
   """
-    Generate feature layer coordinate.
+    Generate feature layer coordinate in orign image.
     Args:
       recf_size: receptive field size [rh,rw,sy,sx]
         where rh,rw is receptive field size
@@ -127,15 +127,21 @@ def feat_layer_cod_gen(recf_size,feat_size,class_num=1):
       where 4 is [dy1,dx1,dy2,dx2]
   """
   cube_h,cube_w,stride_y,stride_x = recf_size[0],recf_size[1],recf_size[2],recf_size[3]
+  stpx2 = cube_w/2 + stride_x/2
+  stpy2 = cube_h/2 + stride_y/2
   det_cx,det_cy = tf.meshgrid(
-    tf.range(0,feat_size[1]+2,dtype=tf.float32)*stride_x,
-    tf.range(0,feat_size[0]+2,dtype=tf.float32)*stride_y)  
+    tf.range(0,int(feat_size[1]+2),dtype=tf.float32)*stride_x,
+    tf.range(0,int(feat_size[0]+2),dtype=tf.float32)*stride_y
+  )
   det_mrt = tf.stack([
-      det_cy[0:feat_size[0],0:feat_size[1]],
-      det_cx[0:feat_size[0],0:feat_size[1]],
-      det_cy[0:feat_size[0],0:feat_size[1]]+cube_h,
-      det_cx[0:feat_size[0],0:feat_size[1]]+cube_w,
+      det_cy[0:feat_size[0],0:feat_size[1]]+stpy2-cube_h,
+      det_cx[0:feat_size[0],0:feat_size[1]]+stpx2-cube_w,
+      det_cy[0:feat_size[0],0:feat_size[1]]+stpy2,
+      det_cx[0:feat_size[0],0:feat_size[1]]+stpx2,
     ],axis=-1)
+  det_mrt = tf.clip_by_value(
+    det_mrt,0.0,
+    tf.maximum(float(feat_size[0])*stride_y+cube_h,float(feat_size[1])*stride_x+cube_w))
   det_mrt = tf.broadcast_to(det_mrt,[class_num,]+det_mrt.shape[-3:-1]+[4])
   det_mrt = tf.transpose(det_mrt,perm=[1,2,0,3])
   return tf.reshape(det_mrt,[1,]+det_mrt.shape[0:2]+[4*class_num])
@@ -570,7 +576,7 @@ def pre_box_loss_by_msk(gt_mask, det_map, score_map, recf_size, det_map_fom='pet
   """
     Args:
       gt_mask: tensor ((1),hm,wm,(1)) mask.
-      det_map: deta value tensor ((1),h,w,4)
+      det_map: deta value tensor ((1),h,w,(num_class-1)*4)
       det_map_fom: det_map format, can be
         'pet': [dy1, dx1, dy2, dx2] percentage difference value in [-1.0,1.0]
         'pix': [dy1, dx1, dy2, dx2] pixel unit difference value
@@ -592,7 +598,7 @@ def pre_box_loss_by_msk(gt_mask, det_map, score_map, recf_size, det_map_fom='pet
       loss value
   """
   assert(recf_size.shape[0]>=4)
-  num_class = score_map.shape[-1] - 1
+  num_class = int(det_map.shape[-1]/4)
   det_map_fom = det_map_fom.lower()
   if(not(det_map_fom in ['pet','pix','yxhw'])):det_map_fom='pet'
   pred_map = tf.reshape(det_map,det_map.shape[-3:])
@@ -606,7 +612,7 @@ def pre_box_loss_by_msk(gt_mask, det_map, score_map, recf_size, det_map_fom='pet
 
   cube_h,cube_w,stride_y,stride_x = float(recf_size[0]),float(recf_size[1]),int(recf_size[2]),int(recf_size[3])
   icube_h,icube_w = int(cube_h), int(cube_w)
-  min_pxls = int((icube_h*icube_w)*lb_thr*lb_thr)
+  min_pxls = int((icube_h*icube_w)*lb_thr)
   # min_pxls = min(int(icube_w*lb_thr),int(icube_h*lb_thr))
 
   # convert percentage difference to pixel difference
@@ -629,9 +635,9 @@ def pre_box_loss_by_msk(gt_mask, det_map, score_map, recf_size, det_map_fom='pet
     rates=[1,1,1,1],
     padding='SAME',
   )
-  gt_mask_4d = gt_mask_4d[0,0:score_map.shape[-3],0:score_map.shape[-2],:]
+  gt_mask_4d = gt_mask_4d[0,0:det_map.shape[-3],0:det_map.shape[-2],:]
   # 2D inc method
-  gt_mask_4d = tf.reshape(gt_mask_4d, score_map.shape[-3:-1]+[icube_h,icube_w])
+  gt_mask_4d = tf.reshape(gt_mask_4d, det_map.shape[-3:-1]+[icube_h,icube_w])
   gt_mask_4d_b = tf.cast(tf.cast(gt_mask_4d,tf.bool),tf.int32)
   ob_gt_mask = tf.reduce_sum(gt_mask_4d_b,axis=[-1,-2])
   boxs_main = tf.where(tf.math.logical_and(ob_gt_mask >= min_pxls, ob_gt_mask <= max_pxls))
@@ -649,9 +655,13 @@ def pre_box_loss_by_msk(gt_mask, det_map, score_map, recf_size, det_map_fom='pet
     # sometimes [ob_gt_mask<min_pxls] will got error
     lmsk[(ob_gt_mask<min_pxls).numpy()]=0
 
-  label_loss = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(
-    logits=tf.reshape(score_map,[-1,score_map.shape[-1]]), 
-    labels=tf.reshape(lmsk,[-1])))
+  if(score_map!=None):
+    label_loss = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(
+      logits=tf.reshape(score_map,[-1,score_map.shape[-1]]), 
+      labels=tf.reshape(lmsk,[-1])))
+  else:
+    label_loss = None
+
   if(use_pixel):
     # pixel level difference
     pred_map_select = tf.gather_nd(pred_map,boxs_main)
@@ -792,3 +802,9 @@ def gen_gt_from_msk(gt_mask,tar_size,recf_size,num_class,lb_thr=0.2):
   gt_mask[(gt_mask_b<min_pxls).numpy()]=0
 
   return gt_mask
+
+# def sub_msk_gen():
+#   """
+#     Extract sub image.
+#     PS: we can't use tf.image.extract_patches because of misaligned coordinate
+#   """

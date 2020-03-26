@@ -6,9 +6,15 @@ from tflib.evaluate_tools import draw_boxes, check_nan
 from datetime import datetime
 from trainer import Trainer
 
+PROJ_PATH = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
+LOGS_PATH = os.path.join(PROJ_PATH,"log")
+MODEL_PATH = os.path.join(PROJ_PATH,"save_model")
+
 class FRCNNTrainer(Trainer):
-  def __init__(self,task_name,isdebug):
-    Trainer.__init__(self,task_name=task_name,isdebug=isdebug)
+  def __init__(self,task_name,isdebug=False,
+    logs_path = LOGS_PATH,
+    model_path = MODEL_PATH,):
+    Trainer.__init__(self,task_name=task_name,isdebug=isdebug,logs_path = logs_path,model_path = model_path,)
     self.cur_rpn_cross_entropy = 0.0
     self.cur_rpn_loss_box = 0.0
     self.cur_cross_entropy = 0.0

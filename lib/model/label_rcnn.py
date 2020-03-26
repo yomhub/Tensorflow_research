@@ -196,7 +196,6 @@ class Label_RCNN(tf.keras.Model):
     l2_feat = self.rpn_L2_conv(l2_feat)
     l3_feat = self.rpn_L3_conv(l3_feat)
 
-    # limit every bbox difference value in [-1,1] 
     l1_score = self.rpn_L1_cls_score(l1_feat)
     l2_score = self.rpn_L2_cls_score(l2_feat)
     l3_score = self.rpn_L3_cls_score(l3_feat)
@@ -363,3 +362,221 @@ class LRCNNLoss(tf.keras.losses.Loss):
 
     # return l3_box_loss + l3_label_loss
     return l1_label_loss + l2_label_loss + l3_label_loss + l1_box_loss + l2_box_loss + l3_box_loss
+
+
+class Label_RCNN_v2(tf.keras.Model):
+  """
+    Args:
+      direction: int of predict box relation in 8 or 4 direction
+      mod: prediction model in 'yxyx' or 
+        final prediction will be:
+        'yxyx': [dy1,dx1,dy2,dx2] + windows offset
+        'yxhw': [dys,dxs,dh,dw] + windows offset
+      dif_nor: True to apply normalization in difference
+  """
+  def __init__(self,
+    num_classes=2,
+    direction=8,
+    mod='yxyx',
+    dif_nor = True,
+    ):
+    super(Label_RCNN_v2, self).__init__()
+    self.num_classes = int(num_classes)
+    self.direction = 4 if direction<=4 else 8
+    self.mod = 'yxyx' if(mod=='yxyx')else 'yxhw'
+    self.dif_nor = bool(dif_nor)
+
+  def build(self,input_shape):
+    imgh = input_shape[-3]
+    imgw = input_shape[-2]
+    vgg16=tf.keras.applications.VGG16(
+      input_tensor=tf.keras.Input(shape=input_shape[-3:]),
+      weights=None, 
+      include_top=False)
+    self.feature_model = tf.keras.Model(
+      inputs=vgg16.inputs,
+      outputs=[
+        vgg16.get_layer('block1_pool').output,
+        # ch64 RF6*6 PIk2, after 3x3conv rf = 10
+        # feature layer scale fls = 1
+        # feature layer stride flstr = 1
+        # vgg16.get_layer('block2_conv1').output,
+        # ch128 RF10*10 PIk2
+        # vgg16.get_layer('block2_conv2').output,
+        # ch128 RF14*14 PIk2
+        vgg16.get_layer('block2_pool').output,
+        # ch128 RF16*16 PIk4, after 3x3conv rf = 24, fls = 8, flstr = 2
+        # vgg16.get_layer('block3_conv3').output,
+        # ch256 RF40*40 PIk4
+        vgg16.get_layer('block3_pool').output,
+        # ch256 RF44*44 PIk8, after 3x3conv rf = 60, fls = 26, flstr = 4
+        # vgg16.get_layer('block4_conv3').output,
+        # ch512 RF92*92 PIk8
+        # vgg16.get_layer('block4_pool').output,
+        # ch512 RF100*100 PIk16
+        # vgg16.get_layer('block5_conv3').output
+        # ch512 RF196*196 PIk16
+        # vgg16.get_layer('block5_pool').output
+        # ch512 RF212*212 PIk32
+      ],
+      name='feature_layer'
+    )
+    # L1 for box proposal
+    self.rpn_L1_conv = tf.keras.layers.Conv2D(filters=128,
+                            kernel_size=(3, 3),
+                            activation=tf.nn.relu,
+                            name="rpn_L1_conv",
+                            padding="same",
+                            # kernel_initializer=unf_pn1,
+                            )
+    self.rpn_L1_bbox_pred = tf.keras.layers.Conv2D(filters=(self.num_classes-1)*4,
+                            kernel_size=(1, 1),
+                            # padding='same', 
+                            activation=None,
+                            name="rpn_L1_bbox_pred",
+                            # kernel_initializer=unf_pn1,
+                            )
+    rf, st = 10, 2
+    cube_h,cube_w = self.rpn_L1_conv(self.feature_model.output[0]).shape[-3],self.rpn_L1_conv(self.feature_model.output[0]).shape[-2]
+    self.rpn_l1_rf_s = tf.convert_to_tensor([float(rf+2*st)]*2+[float(st)]*2)
+    if(self.dif_nor):self.rpn_l1_rf_mut = tf.convert_to_tensor([float(rf+2*st)]*4)
+    self.rpn_l1_det = feat_layer_cod_gen(self.rpn_l1_rf_s,[cube_h,cube_w],self.num_classes-1)
+  
+    # L2 (B2P + conv) for box classification
+    self.rpn_L2_conv = tf.keras.layers.Conv2D(filters=256,
+                            kernel_size=(3, 3),
+                            activation=tf.nn.relu,
+                            name="rpn_L2_conv",
+                            padding="same",
+                            # kernel_initializer=unf_pn1,
+                            )
+    self.rpn_L2_cls_score = tf.keras.layers.Conv2D(filters=self.num_classes,
+                            kernel_size=(1, 1),
+                            activation=None,
+                            # padding='same', 
+                            name="rpn_L2_cls_score",
+                            )
+    rf, st = 24, 4
+    frf, fst = 8, 2
+    cube_h,cube_w = self.rpn_L2_conv(self.feature_model.output[1]).shape[-3],self.rpn_L2_conv(self.feature_model.output[1]).shape[-2]
+    self.rpn_l2_rf_s = tf.convert_to_tensor([float(rf+2*st)]*2+[float(st)]*2)
+    self.l2_to_l1_map = tf.cast(feat_layer_cod_gen(tf.convert_to_tensor([float(frf)]*2+[float(fst)]*2),[cube_h,cube_w],1),tf.int32)
+    
+    # L3 (B3P + conv) for box classification
+    self.rpn_L3_conv = tf.keras.layers.Conv2D(filters=256,
+                            kernel_size=(3, 3),
+                            activation=tf.nn.relu,
+                            name="rpn_L3_conv",
+                            padding="same",
+                            # kernel_initializer=unf_pn1,
+                            )
+    self.rpn_L3_cls_score = tf.keras.layers.Conv2D(filters=self.num_classes,
+                            kernel_size=(1, 1),
+                            activation=None,
+                            # padding='same', 
+                            name="rpn_L3_cls_score",
+                            )
+    rf, st = 44, 8
+    frf, fst = 26, 4
+    cube_h,cube_w = self.rpn_L3_conv(self.feature_model.output[2]).shape[-3],self.rpn_L3_conv(self.feature_model.output[2]).shape[-2]
+    self.rpn_l3_rf_s = tf.convert_to_tensor([float(rf+2*st)]*2+[float(st)]*2)
+    self.l3_to_l1_map = tf.cast(feat_layer_cod_gen(tf.convert_to_tensor([float(frf)]*2+[float(fst)]*2),[cube_h,cube_w],1),tf.int32)
+
+    self.imgh = imgh
+    self.imgw = imgw
+    
+  def call(self, inputs):
+    if(inputs.dtype!=tf.float32 or inputs.dtype!=tf.float64):
+      inputs = tf.cast(inputs,tf.float32)
+    if(inputs.shape[-3]!=self.imgh or inputs.shape[-2]!=self.imgw):
+      inputs = tf.image.resize(inputs,[self.imgh,self.imgw])
+    if(len(inputs.shape)==3):
+      inputs = tf.reshape(inputs,[1]+inputs.shape)
+    l1_feat,l2_feat,l3_feat = self.feature_model(inputs)
+    l1_feat = self.rpn_L1_conv(l1_feat)
+    l2_feat = self.rpn_L2_conv(l2_feat)
+    l3_feat = self.rpn_L3_conv(l3_feat)
+
+    l1_bbox = self.rpn_L1_bbox_pred(l1_feat)
+    l1_bbox_cod = l1_bbox + self.rpn_l1_det
+    l2_score = self.rpn_L2_cls_score(l2_feat)
+    l3_score = self.rpn_L3_cls_score(l3_feat)
+  
+    l2_score_arg = tf.math.argmax(l2_score,axis=-1)
+    l3_score_arg = tf.math.argmax(l3_score,axis=-1)
+    l1_score = np.zeros(l1_bbox.shape[:-1]+[2])
+    l2_map_slc = self.l2_to_l1_map[l2_score_arg>0]
+    l2_map_slc = tf.reshape(l2_map_slc,[-1,4])
+    for o in l2_map_slc:
+      l1_score[0,o[0]:o[2],o[1]:o[3],1] = 1.0
+    l3_map_slc = self.l3_to_l1_map[l3_score_arg>0]
+    l3_map_slc = tf.reshape(l3_map_slc,[-1,4])
+    for o in l3_map_slc:
+      l1_score[0,o[0]:o[2],o[1]:o[3],1] = 1.0
+
+    self.y_pred = {
+      "l1_bbox" : l1_bbox_cod,
+      "l1_bbox_det" : l1_bbox,
+      "l1_score" : l1_score,
+      "l2_score" : l2_score,
+      "l3_score" : l3_score,
+
+      # receptive field and stride in L1
+      "l1_rf_s":self.rpn_l1_rf_s,
+      "l2_rf_s":self.rpn_l2_rf_s,
+      "l3_rf_s":self.rpn_l3_rf_s,
+    }
+
+    return self.y_pred
+
+class LRCNNLoss_v2(tf.keras.losses.Loss):
+  def __init__(self,imge_size,gtformat='yxyx',use_cross=True,mag_f='smooth',dif_nor=True):
+    """
+      Args:
+        use_cross: set True to use cross loss function
+        mag_f: magnification function, can be
+          string: 'smooth', apply L1 smooth on loss function 
+          string: 'sigmoid', apply sigmoid on loss function 
+          tf.keras.layers.Lambda: apply input Lambda object
+          others, don't apply any magnification function
+        dif_nor: True to apply normalization in difference
+    """
+    super(LRCNNLoss_v2, self).__init__()
+    self.gtformat = gtformat.lower()
+    if(not(self.gtformat in ['yxyx','xywh','mask'])):self.gtformat='yxyx'
+    self.imge_size = imge_size
+    self.use_cross = use_cross    
+    self.mag_f = mag_f if((mag_f in ['smooth','sigmoid']) or type(mag_f)==types.LambdaType)else 'smooth'
+    self.dif_nor = bool(dif_nor)
+    self.loss_detail = {}
+
+  def _label_loss(self,pred_score,recf_size,y_true):
+    msk = gen_gt_from_msk(y_true,pred_score.shape[-3:-1],recf_size,2,0.1)
+    return tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(
+      logits=tf.reshape(pred_score,[-1,pred_score.shape[-1]]), 
+      labels=tf.reshape(msk,[-1])))
+
+  def _boxes_loss(self,box_prd,recf_size,y_true):
+    bxloss,_ = pre_box_loss_by_msk(
+      y_true,box_prd,None,recf_size,
+      det_map_fom='pet' if(self.dif_nor)else 'pix',
+      norl = False,
+      lb_thr = 0.1,
+      use_pixel=False)
+    return bxloss
+
+  def call(self, y_true, y_pred):
+    loss = 0.0
+    self.loss_detail.clear()
+    name_list = [o for o in y_pred if('score' in o)]
+    for o in name_list:
+      if(o[0:2]=='l1'):continue
+      if(o[0:2]+'_rf_s' in y_pred):
+        tmp = self._label_loss(y_pred[o],y_pred[o[0:2]+'_rf_s'],y_true)
+        self.loss_detail[o[0:2]+'_label_loss'] = tmp
+        loss += tmp
+
+    tmp = self._boxes_loss(y_pred["l1_bbox_det"],y_pred["l1_rf_s"],y_true)
+    self.loss_detail['box_loss'] = tmp
+    loss += tmp
+    return loss

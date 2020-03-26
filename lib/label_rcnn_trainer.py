@@ -8,9 +8,16 @@ from tflib.bbox_transform import xywh2yxyx, gen_label_from_gt, gen_gt_from_msk
 from datetime import datetime
 from trainer import Trainer
 
+PROJ_PATH = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
+LOGS_PATH = os.path.join(PROJ_PATH,"log")
+MODEL_PATH = os.path.join(PROJ_PATH,"save_model")
+
 class LRCNNTrainer(Trainer):
-  def __init__(self,task_name,isdebug,threshold=0.7,gtformat='yxyx',gen_box_by_gt=True,ol_score=False):
-    Trainer.__init__(self,task_name=task_name,isdebug=isdebug)
+  def __init__(self,task_name,isdebug,
+    threshold=0.7,gtformat='yxyx',gen_box_by_gt=False,ol_score=False,
+    logs_path = LOGS_PATH,
+    model_path = MODEL_PATH,):
+    Trainer.__init__(self,task_name=task_name,isdebug=isdebug,logs_path = logs_path,model_path = model_path,)
     self.cur_loss = 0.0
     self.threshold = threshold
     gtformat = gtformat.lower()
@@ -75,7 +82,9 @@ class LRCNNTrainer(Trainer):
       image = draw_grid_in_gt(recf_size,gt_box,image)
     else:
       image = draw_msk_in_gt(gt_box,image)
-
+      
+    if(len(score.shape)==3):score = score[:,:,:(int(bbox.shape[-1]/4)+1)]
+    elif(len(score.shape)==4):score = score[:,:,:,:(int(bbox.shape[-1]/4)+1)]
     score = tf.reshape(score,[-1,score.shape[-1]])
     score = tf.math.argmax(score,axis=-1)
     l1box = bbox[score>0]
@@ -111,28 +120,22 @@ class LRCNNTrainer(Trainer):
       gt_box = y_single[:,1:]
       label_gt = tf.stack([y_single[:,0],gt_box[:,0],gt_box[:,1],gt_box[:,2],gt_box[:,3]],axis=1)
     else:label_gt = y_single
-
-    if(self.ol_score and self.gtformat in ['xywh','yxyx']):
-      l1op = tf.reduce_sum(label_overlap_tf(gt_box,x_single.shape[1:3],gen_label_from_prob(y_pred["l1_score"])))
-      l2op = tf.reduce_sum(label_overlap_tf(gt_box,x_single.shape[1:3],gen_label_from_prob(y_pred["l2_score"])))
-      l3op = tf.reduce_sum(label_overlap_tf(gt_box,x_single.shape[1:3],gen_label_from_prob(y_pred["l3_score"])))
-      auto_scalar(l1op,step,"L1 overlap")
-      auto_scalar(l2op,step,"L2 overlap")
-      auto_scalar(l3op,step,"L3 overlap")
+    name_list = [o for o in y_pred if('bbox' in o)]
+    # if(self.ol_score and self.gtformat in ['xywh','yxyx']):
+    #   l1op = tf.reduce_sum(label_overlap_tf(gt_box,x_single.shape[1:3],gen_label_from_prob(y_pred["l1_score"])))
+    #   l2op = tf.reduce_sum(label_overlap_tf(gt_box,x_single.shape[1:3],gen_label_from_prob(y_pred["l2_score"])))
+    #   l3op = tf.reduce_sum(label_overlap_tf(gt_box,x_single.shape[1:3],gen_label_from_prob(y_pred["l3_score"])))
+    #   auto_scalar(l1op,step,"L1 overlap")
+    #   auto_scalar(l2op,step,"L2 overlap")
+    #   auto_scalar(l3op,step,"L3 overlap")
       
-    bx1_img = self.draw_gt_pred_box(y_pred["l1_score"],y_pred["l1_bbox"],y_pred["l1_rf_s"], label_gt, x_single)
-    bx2_img = self.draw_gt_pred_box(y_pred["l2_score"],y_pred["l2_bbox"],y_pred["l2_rf_s"], label_gt, x_single)
-    bx3_img = self.draw_gt_pred_box(y_pred["l3_score"],y_pred["l3_bbox"],y_pred["l3_rf_s"], label_gt, x_single)
+    for o in name_list:
+      lx = o[0:2]
+      tmp = self.draw_gt_pred_box(y_pred[lx+"_score"],y_pred[lx+"_bbox"],y_pred[lx+"_rf_s"], label_gt, x_single)
+      if(tf.reduce_max(tmp)>1.0):
+        tmp = tmp/256.0
+      tf.summary.image(name="Boxed image in {} in step {}.".format(lx.upper(),self.current_step),data=tmp,step=0,max_outputs=tmp.shape[0])
 
-    if(tf.reduce_max(bx1_img)>1.0):
-      bx1_img = bx1_img/256.0
-    if(tf.reduce_max(bx2_img)>1.0):
-      bx2_img = bx2_img/256.0
-    if(tf.reduce_max(bx3_img)>1.0):
-      bx3_img = bx3_img/256.0
-    tf.summary.image(name="Boxed image in L1 in step {}.".format(self.current_step),data=bx1_img,step=0,max_outputs=bx1_img.shape[0])
-    tf.summary.image(name="Boxed image in L2 in step {}.".format(self.current_step),data=bx2_img,step=0,max_outputs=bx2_img.shape[0])
-    tf.summary.image(name="Boxed image in L3 in step {}.".format(self.current_step),data=bx3_img,step=0,max_outputs=bx3_img.shape[0])
     return 0
 
   def eval_callback(self,total_size,logger,time_usage):

@@ -99,6 +99,7 @@ def rf_helper(net_list,ord_len,panding=True):
   cod_table = np.arange(ord_len,dtype=np.int)
   cod_table = np.stack((cod_table,cod_table),axis=-1)
   cod_table = [cod_table.tolist()]
+
   for i in range(len(net_list)):
     rf,st = rf_st[i]
     ksize,strsize = net_list[i]
@@ -109,7 +110,7 @@ def rf_helper(net_list,ord_len,panding=True):
     p_harf_k = int(ksize/2) if((ksize-int(ksize/2)*2)!=0)else int(ksize/2)-1
     harf_k = ksize - 1 - p_harf_k
     max_cod = len(cod_table[i])-1
-    stp = 0 if panding else harf_k
+    stp = 0 if panding else p_harf_k
     edp = max_cod if panding else max_cod - harf_k
     tmp = []
     while(stp<edp):
