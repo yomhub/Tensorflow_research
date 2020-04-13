@@ -14,7 +14,7 @@ MODEL_PATH = os.path.join(PROJ_PATH,"save_model")
 
 class LRCNNTrainer(Trainer):
   def __init__(self,task_name,isdebug,
-    threshold=0.7,gtformat='yxyx',gen_box_by_gt=False,ol_score=False,
+    threshold=0.7,gtformat='yxyx',gen_box_by_gt=False,ol_score=False,draw_gt=False,
     logs_path = LOGS_PATH,
     model_path = MODEL_PATH,):
     Trainer.__init__(self,task_name=task_name,isdebug=isdebug,logs_path = logs_path,model_path = model_path,)
@@ -25,6 +25,7 @@ class LRCNNTrainer(Trainer):
     if(not(gtformat in ['yxyx','xywh','mask'])):self.gtformat='yxyx'
     self.gen_box_by_gt = gen_box_by_gt
     self.ol_score = ol_score
+    self.draw_gt = bool(draw_gt)
     # super(FRCNNTrainer,self).__init__(kwargs)
 
   def train_action(self,x_single,y_single,step,logger):
@@ -76,12 +77,12 @@ class LRCNNTrainer(Trainer):
       minval=128,
       maxval=256,
     )
-
-    if(self.gtformat in ['xywh','yxyx']):
-      # draw gt box frist
-      image = draw_grid_in_gt(recf_size,gt_box,image)
-    else:
-      image = draw_msk_in_gt(gt_box,image)
+    if(self.draw_gt):
+      if(self.gtformat in ['xywh','yxyx']):
+        # draw gt box frist
+        image = draw_grid_in_gt(recf_size,gt_box,image)
+      else:
+        image = draw_msk_in_gt(gt_box,image)
       
     if(len(score.shape)==3):score = score[:,:,:(int(bbox.shape[-1]/4)+1)]
     elif(len(score.shape)==4):score = score[:,:,:,:(int(bbox.shape[-1]/4)+1)]

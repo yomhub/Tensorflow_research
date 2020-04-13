@@ -55,7 +55,7 @@ if __name__ == "__main__":
   
   eva_b = 1
   isdebug = args.debug
-  # isdebug = True
+  isdebug = True
   # opt_schedule = np.array([0.6,0.8])*args.batch
   # opt_schedule = opt_schedule.astype(np.int)
   # opt_names = ['sgd']
@@ -92,8 +92,8 @@ if __name__ == "__main__":
     dif_nor = False
     tkname = "{}_with_{}_{}".format(args.name,args.dataset,args.opt) if(args.name!=None) else "LRCNN_with_{}_{}".format(args.dataset,args.opt)
     trainer = LRCNNTrainer(isdebug=isdebug,task_name=tkname,gtformat=gtformat,gen_box_by_gt=False,)
-    model = Label_RCNN_v2(num_classes=2,dif_nor=dif_nor)
-    loss = LRCNNLoss_v2(imge_size=[args.datay,args.datax],gtformat=gtformat,dif_nor=dif_nor)
+    model = Label_RCNN(num_classes=2,dif_nor=dif_nor)
+    loss = LRCNNLoss(imge_size=[args.datay,args.datax],gtformat=gtformat,dif_nor=dif_nor)
   
   if(not(isdebug) and args.load):
     last_model = trainer.load(model,tkname)

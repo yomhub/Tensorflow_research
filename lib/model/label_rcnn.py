@@ -52,19 +52,23 @@ class Label_RCNN(tf.keras.Model):
       self.feature_model = tf.keras.Model(
         inputs=vgg16.inputs,
         outputs=[
+          vgg16.get_layer('block1_pool').output,
+          # ch64 RF6*6 PIk2, after 3x3conv rf = 10
           # vgg16.get_layer('block2_conv2').output,
           # ch128 RF14*14 PIk2
+          vgg16.get_layer('block2_pool').output,
+          # ch128 RF16*16 PIk4, after 3x3conv rf = 24, fls = 8, flstr = 2
           # vgg16.get_layer('block3_conv3').output,
           # ch256 RF40*40 PIk4
           vgg16.get_layer('block3_pool').output,
           # ch256 RF44*44 PIk8
           # vgg16.get_layer('block4_conv3').output,
           # ch512 RF92*92 PIk8
-          vgg16.get_layer('block4_pool').output,
+          ## vgg16.get_layer('block4_pool').output,
           # ch512 RF100*100 PIk16
           # vgg16.get_layer('block5_conv3').output
           # ch512 RF196*196 PIk16
-          vgg16.get_layer('block5_pool').output
+          ## vgg16.get_layer('block5_pool').output
           # ch512 RF212*212 PIk32
         ],
         name=self.feature_layer_name
@@ -88,7 +92,7 @@ class Label_RCNN(tf.keras.Model):
         name=self.feature_layer_name
       )
     # unf_pn1 = tf.random_uniform_initializer(minval=-1.0, maxval=1.0)
-    self.rpn_L1_conv = tf.keras.layers.Conv2D(filters=self.feature_model.output[0].shape[-1],
+    self.rpn_L1_conv = tf.keras.layers.Conv2D(filters=128,
                             kernel_size=(3, 3),
                             activation=tf.nn.relu,
                             name="rpn_L1_conv",
@@ -110,8 +114,9 @@ class Label_RCNN(tf.keras.Model):
                             # kernel_initializer=unf_pn1,
                             )
     cube_h,cube_w = self.rpn_L1_conv(self.feature_model.output[0]).shape[-3],self.rpn_L1_conv(self.feature_model.output[0]).shape[-2]
-    self.rpn_l1_rf_s = tf.convert_to_tensor([float(44+2*8),float(44+2*8),float(8),float(8)])
-    if(self.dif_nor):self.rpn_l1_rf_mut = tf.convert_to_tensor([float(44+2*8),float(44+2*8),float(44+2*8),float(44+2*8)])
+    rf, st = 10, 2
+    self.rpn_l1_rf_s = tf.convert_to_tensor([float(rf+2*st)]*2+[float(st)]*2)
+    if(self.dif_nor):self.rpn_l1_rf_mut = tf.convert_to_tensor([float(rf+2*st)]*4)
     self.rpn_l1_det = feat_layer_cod_gen(self.rpn_l1_rf_s,[cube_h,cube_w],self.num_classes-1)
     # self.rpn_L1_window = tf.keras.models.Sequential(
     #   [
@@ -120,7 +125,7 @@ class Label_RCNN(tf.keras.Model):
     #   ],
     #   "rpn_L1_window_direction"
     # )
-    self.rpn_L2_conv = tf.keras.layers.Conv2D(filters=self.feature_model.output[1].shape[-1],
+    self.rpn_L2_conv = tf.keras.layers.Conv2D(filters=256,
                             kernel_size=(3, 3),
                             activation=tf.nn.relu,
                             padding="same",
@@ -139,8 +144,9 @@ class Label_RCNN(tf.keras.Model):
                             name="rpn_L2_bbox_pred",
                             )
     cube_h,cube_w = self.rpn_L2_conv(self.feature_model.output[1]).shape[-3],self.rpn_L2_conv(self.feature_model.output[1]).shape[-2]
-    self.rpn_l2_rf_s = tf.convert_to_tensor([float(100+2*16),float(100+2*16),float(16),float(16)])
-    if(self.dif_nor):self.rpn_l2_rf_mut = tf.convert_to_tensor([float(100+2*16),float(100+2*16),float(100+2*16),float(100+2*16)])
+    rf, st = 24, 4
+    self.rpn_l2_rf_s = tf.convert_to_tensor([float(rf+2*st)]*2+[float(st)]*2)
+    if(self.dif_nor):self.rpn_l2_rf_mut = tf.convert_to_tensor([float(rf+2*st)]*4)
     self.rpn_l2_det = feat_layer_cod_gen(self.rpn_l2_rf_s,[cube_h,cube_w],self.num_classes-1)
 
     # self.rpn_L2_window = tf.keras.models.Sequential(
@@ -150,7 +156,7 @@ class Label_RCNN(tf.keras.Model):
     #   ],
     #   "rpn_L2_window_direction"
     # )
-    self.rpn_L3_conv = tf.keras.layers.Conv2D(filters=self.feature_model.output[2].shape[-1],
+    self.rpn_L3_conv = tf.keras.layers.Conv2D(filters=256,
                             kernel_size=(3, 3),
                             activation=tf.nn.relu,
                             padding="same",
@@ -170,8 +176,9 @@ class Label_RCNN(tf.keras.Model):
                             name="rpn_L3_bbox_pred",
                             )
     cube_h,cube_w = self.rpn_L3_conv(self.feature_model.output[2]).shape[-3],self.rpn_L3_conv(self.feature_model.output[2]).shape[-2]
-    self.rpn_l3_rf_s = tf.convert_to_tensor([float(212+2*32),float(212+2*32),float(32),float(32)])
-    if(self.dif_nor):self.rpn_l3_rf_mut = tf.convert_to_tensor([float(212+2*32),float(212+2*32),float(212+2*32),float(212+2*32)])
+    rf, st = 44, 8
+    self.rpn_l3_rf_s = tf.convert_to_tensor([float(rf+2*st)]*2+[float(st)]*2)
+    if(self.dif_nor):self.rpn_l3_rf_mut = tf.convert_to_tensor([float(rf+2*st)]*4)
     self.rpn_l3_det = feat_layer_cod_gen(self.rpn_l3_rf_s,[cube_h,cube_w],self.num_classes-1)                          
     # self.rpn_L3_window = tf.keras.models.Sequential(
     #   [
