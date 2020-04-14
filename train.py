@@ -9,8 +9,10 @@ from lib.dataloader.total import TTText
 from lib.model.config import cfg
 from lib.model.faster_rcnn import Faster_RCNN, RCNNLoss
 from lib.model.label_rcnn import Label_RCNN, LRCNNLoss,Label_RCNN_v2, LRCNNLoss_v2
+from lib.model.unet import Unet, UnetLoss
 from lib.frcnn_trainer import FRCNNTrainer
 from lib.label_rcnn_trainer import LRCNNTrainer
+from lib.unet_trainer import UnetTrainer
 from lib.tflib.evaluate_tools import draw_boxes
 from lib.tflib.log_tools import save_image
 
@@ -31,7 +33,7 @@ if __name__ == "__main__":
   parser.add_argument('--debug', help='Set --debug if want to debug.', action="store_true")
   parser.add_argument('--save', help='Set --save if want to save network.', action="store_true")
   parser.add_argument('--load', help='Set --load if want to load network.', action="store_true")
-  parser.add_argument('--net', help='Choose noework (frcnn/lrcnn).', default="lrcnn")
+  parser.add_argument('--net', help='Choose noework (frcnn/lrcnn/unet).', default="unet")
   parser.add_argument('--name', help='Name of task.')
   parser.add_argument('--dataset', help='Choose dataset: ctw/svt/ttt.', default="ttt")
   parser.add_argument('--datax', type=int, help='Dataset output width.',default=__DEF_IMG_SIZE[__DEF_INDEX][0])
@@ -55,7 +57,8 @@ if __name__ == "__main__":
   
   eva_b = 1
   isdebug = args.debug
-  isdebug = True
+  # isdebug = True
+
   # opt_schedule = np.array([0.6,0.8])*args.batch
   # opt_schedule = opt_schedule.astype(np.int)
   # opt_names = ['sgd']
@@ -87,6 +90,15 @@ if __name__ == "__main__":
     trainer = FRCNNTrainer(isdebug=isdebug,task_name=tkname)
     model = Faster_RCNN(num_classes=2,bx_choose=args.proposal)
     loss = RCNNLoss(cfg=cfg,cfg_name="TRAIN",gtformat=gtformat)
+
+  elif(args.net=='unet'):
+    # Mask Unet
+    tkname = "Unet_with_{}".format(args.opt)
+    trainer = UnetTrainer(isdebug=isdebug,task_name=tkname)
+    mydatalog = TTText(__DEF_TTT_DIR,out_size=None)
+    model = Unet()
+    loss = UnetLoss()
+
   else:
     # label RCNN
     dif_nor = False
@@ -101,47 +113,34 @@ if __name__ == "__main__":
       model = last_model
       mydatalog.setconter(trainer.data_count)
 
-  model.compile(
-    optimizer=optimizer,
-    loss=loss,
-    )
+  # model.compile(
+  #   optimizer=optimizer,
+  #   loss=loss,
+  #   )
 
   if(isdebug):
     for i in range(3):
       x_train, y_train = mydatalog.read_train_batch(3)
+      x_val, y_val = mydatalog.read_test_batch(2)
       ret = trainer.fit(x_train,y_train,model,loss,optimizer)
       if(ret==-1):
         break
+      trainer.evaluate(x_val,y_val)
+
   else:
     islog=False
-    # loss.gtformat='xywh'
-    # init_data = SVT(__DEF_SVT_DIR,out_size=[args.datay,args.datax])
     trainer.set_trainer(model=model,loss=loss,opt=optimizer)
 
-    # for i in range(3):
-    #   x_train, y_train = init_data.read_train_batch(3)
-    #   trainer.fit(x_train,y_train)
-    # loss.gtformat='mask'
-    # optimizer = tf.keras.optimizers.Adam(learning_rate=args.learnrate)
-    # trainer.set_trainer(loss=loss,opt=optimizer)
     for i in range(args.batch):
       x_train, y_train = mydatalog.read_train_batch(args.step)
       x_val, y_val = mydatalog.read_test_batch(2)
-      # x_val, y_val = x_train[0:2], y_train[0:2]
-      # if(islog==False):
-      #   imgs = draw_boxes(x_train,y_train)
-      #   # imgs = tf.split(imgs,imgs.shape[0],axis=0)
-      #   # for i in range(len(imgs)):
-      #   #   save_image(imgs[i],'/home/yomcoding/TensorFlow/FasterRCNN/log/x_train_demo_{}.jpg'.format(i))
-      #   trainer.log_image(imgs,10,name="{} training data examples.".format(imgs.shape[0]))
-      #   islog=True
         
       ret = trainer.fit(x_train,y_train)
       if(ret==-1):break
       if(i%eva_b==0):
         trainer.evaluate(x_val,y_val)
         trainer.evaluate(x_train[0:2],y_train[0:2])
-      # inc = np.where(opt_schedule==i)
+
       if(i==5):
         trainer.set_trainer(opt=tf.keras.optimizers.Adam(learning_rate=0.005))
       if(i==10):
@@ -149,6 +148,7 @@ if __name__ == "__main__":
       # if(i%10==0):
       #   trainer.set_trainer(data_count=mydatalog._init_conter)
       #   trainer.save()
+      
   if(ret==0 and args.save):
     trainer.set_trainer(data_count=mydatalog.train_conter)
     trainer.save()

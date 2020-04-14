@@ -187,7 +187,6 @@ class Trainer():
     self.model.save_weights(os.path.join(save_path,'model'))
     # tf.saved_model.save(self.model,save_path)
     txtlog = open(os.path.join(save_path,'log.txt'),'a+',encoding='utf8')
-    txtlog.write("Img X, Y = {} , {}.\n".format(self.model.imgw,self.model.imgh))
     txtlog.write("Step = {} , Batch = {} , Data count = {} .".format(self.current_step,self.batch,self.data_count))
 
   def load(self,model,tsk_name=None):
@@ -210,7 +209,6 @@ class Trainer():
     # load config
     try:
       txtlog = open(os.path.join(loddir,'log.txt'),'r',encoding='utf8')
-      imgw,imgh = str2num(txtlog.readline())
       self.current_step,self.batch,self.data_count = str2num(txtlog.readline())
       txtlog.close()
     except Exception as e:

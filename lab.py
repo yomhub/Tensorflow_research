@@ -6,11 +6,14 @@ import argparse
 from lib.dataloader.svt import SVT
 from lib.model.config import cfg
 from lib.model.label_rcnn import Label_RCNN, LRCNNLoss
+from lib.model.unet import Unet, UnetLoss
 from lib.frcnn_trainer import FRCNNTrainer
+from lib.unet_trainer import UnetTrainer
 from lib.tflib.bbox_transform import *
 from lib.tflib.evaluate_tools import *
 from lib.tflib.log_tools import auto_image,save_image,rf_helper
 from lib.dataloader.total import TTText
+
 # 
 
 __DEF_LOCAL_DIR = os.path.split(__file__)[0]
@@ -150,14 +153,11 @@ def t_pre_box_loss_by_msk():
   #   ret = pre_box_loss_by_msk(gt_mask=y_train[i],det_map=pred["l3_bbox_det"],score_map=pred["l3_score"],recf_size=pred["l3_rf_s"],det_map_fom='pix',use_pixel=False)
 
 if __name__ == "__main__":
-  # mydatalog = TTText(__DEF_TTT_DIR,out_size=[360,640])
-  # x_train, y_train = mydatalog.read_train_batch(10)
-  model = Label_RCNN()
-  model(tf.zeros((1,640,640,3)))
-  # pred = model(x_train[0])
-  try:
-    model.load_weights('/am/home/yomcoding/TensorFlow/FasterRCNN/save_model/LRCNN_with_ttt_adam/20200325-203940/model')
-  except Exception as e:
-    print(e)
-  
+  model = Unet()
+  tt=tf.zeros((1,1080,1920,3))
+  model(tt)
+  # model.fit(tt,tf.zeros((1,1080,1920,1)))
+  trainer = UnetTrainer('text',True)
+  trainer.set_trainer(model=model,loss=UnetLoss(),opt=tf.keras.optimizers.Adam())
+  trainer.fit()
   print('end')

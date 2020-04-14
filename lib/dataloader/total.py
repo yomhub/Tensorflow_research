@@ -35,8 +35,6 @@ class TTText():
     self.ytraindir = os.path.join(dir,'gt_pixel','Train')
     self.ytestdir = os.path.join(dir,'gt_pixel','Test')
 
-    self.out_y = out_size[0]
-    self.out_x = out_size[1]
     self.out_size = out_size
     self.out_format = 'tensor' if(out_format.lower()=='tensor') else 'list'
     self.train_conter = 0
@@ -63,11 +61,13 @@ class TTText():
     dirs = (img_names[slice_a] + img_names[slice_b]) if(slice_b)else img_names[slice_a]
 
     for mdir in dirs:
-      tmp = tf.image.resize(
-        tf.image.decode_image(tf.io.read_file(os.path.join(self.xtraindir,mdir))),self.out_size,'nearest')
+      tmp = tf.image.decode_image(tf.io.read_file(os.path.join(self.xtraindir,mdir)))
+      if(self.out_size): tmp = tf.image.resize(tmp,self.out_size,'nearest')
       img_list.append(tf.reshape(tmp,[1]+tmp.shape))
-      msk_list.append(tf.image.resize(
-        tf.image.decode_image(tf.io.read_file(os.path.join(self.ytraindir,mdir))),self.out_size,'nearest'))
+
+      tmp = tf.image.decode_image(tf.io.read_file(os.path.join(self.ytraindir,mdir)))
+      if(self.out_size): tmp = tf.image.resize(tmp,self.out_size,'nearest')
+      msk_list.append(tmp)
 
     if(self.out_format=='tensor'):
       img_list = tf.convert_to_tensor(img_list)
@@ -85,11 +85,13 @@ class TTText():
     dirs = (img_names[slice_a] + img_names[slice_b]) if(slice_b)else img_names[slice_a]
 
     for mdir in dirs:
-      tmp = tf.image.resize(
-        tf.image.decode_image(tf.io.read_file(os.path.join(self.xtestdir,mdir))),self.out_size,'nearest')
+      tmp = tf.image.decode_image(tf.io.read_file(os.path.join(self.xtestdir,mdir)))
+      if(self.out_size): tmp = tf.image.resize(tmp,self.out_size,'nearest')
       img_list.append(tf.reshape(tmp,[1]+tmp.shape))
-      msk_list.append(tf.image.resize(
-        tf.image.decode_image(tf.io.read_file(os.path.join(self.ytestdir,mdir))),self.out_size,'nearest'))
+      
+      tmp = tf.image.decode_image(tf.io.read_file(os.path.join(self.ytestdir,mdir)))
+      if(self.out_size): tmp = tf.image.resize(tmp,self.out_size,'nearest')
+      msk_list.append(tmp)
 
     if(self.out_format=='tensor'):
       img_list = tf.convert_to_tensor(img_list)
