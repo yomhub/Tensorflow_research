@@ -46,6 +46,11 @@ class Trainer():
     self.eva_step = 0
     self.task_name = task_name
     
+  def log_txt(self,logstr):
+    if(logstr and type(logstr)==str):
+      logger = open(os.path.join(self.logs_path,'result.txt'),'a+',encoding='utf8')
+      logger.write(logstr)
+
   def log_image(self, tfimg, log_num=10, img_size=None, name=None):
     if(self.isdebug and self.file_writer==None):
       self.file_writer = tf.summary.create_file_writer(self.logs_path)

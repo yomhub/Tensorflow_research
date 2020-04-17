@@ -16,7 +16,7 @@ from lib.unet_trainer import UnetTrainer
 from lib.tflib.evaluate_tools import draw_boxes
 from lib.tflib.log_tools import save_image
 
-__DEF_INDEX = 2
+__DEF_INDEX = 1
 __DEF_IMG_SIZE = [[1280,720],[int(1280/2),int(720/2)],[640,640]]
 
 __DEF_LOCAL_DIR = os.path.split(__file__)[0]
@@ -38,27 +38,30 @@ if __name__ == "__main__":
   parser.add_argument('--dataset', help='Choose dataset: ctw/svt/ttt.', default="ttt")
   parser.add_argument('--datax', type=int, help='Dataset output width.',default=__DEF_IMG_SIZE[__DEF_INDEX][0])
   parser.add_argument('--datay', type=int, help='Dataset output height.',default=__DEF_IMG_SIZE[__DEF_INDEX][1])
-  parser.add_argument('--step', type=int, help='Step size.',default=10)
-  parser.add_argument('--batch', type=int, help='Batch size.',default=20)
+  parser.add_argument('--step', type=int, help='Step size.',default=5)
+  parser.add_argument('--batch', type=int, help='Batch size.',default=50)
+  parser.add_argument('--logstp', type=int, help='Log step size.',default=10)
   parser.add_argument('--cross', help='Set --cross if want to cross box loss.', action="store_true")
   # parser.add_argument('--savestep', type=int, help='Batch size.',default=20)
-  parser.add_argument('--learnrate', type=float, help='Learning rate.',default=0.007)
+  parser.add_argument('--learnrate', type=float, help='Learning rate.',default=0.001)
   args = parser.parse_args()
   time_start = datetime.now()
-  print("Start when {}.\n".format(time_start.strftime("%Y%m%d-%H%M%S")))
-  print("Running with: \n\t Use proposal: {},\n\t Is debug: {}.".format(args.proposal,args.debug))
-  print("\t Step size: {},\n\t Batch size: {}.".format(args.step,args.batch))
-  print("\t Data size: {} X {}.".format(args.datax,args.datay))
-  print("\t Optimizer: {}.".format(args.opt))
-  print("\t Taks name: {}.".format(args.name))
-  print("\t Use cross: {}.".format(args.cross))
-  print("\t Save network: {}.".format('Yes' if(args.save)else 'No'))
-  print("\t Load network: {}.".format('Yes' if(args.load)else 'No'))
-  
-  eva_b = 1
+
   isdebug = args.debug
   # isdebug = True
 
+  summarize = "Start when {}.\n".format(time_start.strftime("%Y%m%d-%H%M%S")) +\
+    "Running with: \n\t Use proposal: {},\n\t Is debug: {}.\n".format(args.proposal,args.debug)+\
+    "\t Step size: {},\n\t Batch size: {}.\n".format(args.step,args.batch)+\
+    "\t Data size: {} X {}.\n".format(args.datax,args.datay)+\
+    "\t Optimizer: {}.\n".format(args.opt)+\
+    "\t Learning rate: {}.\n".format(args.learnrate)+\
+    "\t Taks name: {}.\n".format(args.name)+\
+    "\t Use cross: {}.\n".format(args.cross)+\
+    "\t Save network: {}.\n".format('Yes' if(args.save)else 'No')+\
+    "\t Load network: {}.\n".format('Yes' if(args.load)else 'No')
+  print(summarize)
+  
   # opt_schedule = np.array([0.6,0.8])*args.batch
   # opt_schedule = opt_schedule.astype(np.int)
   # opt_names = ['sgd']
@@ -95,9 +98,9 @@ if __name__ == "__main__":
     # Mask Unet
     tkname = "Unet_with_{}".format(args.opt)
     trainer = UnetTrainer(isdebug=isdebug,task_name=tkname)
-    mydatalog = TTText(__DEF_TTT_DIR,out_size=None)
+    mydatalog = TTText(__DEF_TTT_DIR,out_size=[args.datay,args.datax])
     model = Unet()
-    loss = UnetLoss()
+    loss = UnetLoss('smp')
 
   else:
     # label RCNN
@@ -107,6 +110,7 @@ if __name__ == "__main__":
     model = Label_RCNN(num_classes=2,dif_nor=dif_nor)
     loss = LRCNNLoss(imge_size=[args.datay,args.datax],gtformat=gtformat,dif_nor=dif_nor)
   
+  trainer.log_txt(summarize)
   if(not(isdebug) and args.load):
     last_model = trainer.load(model,tkname)
     if(last_model!=None):
@@ -133,11 +137,11 @@ if __name__ == "__main__":
 
     for i in range(args.batch):
       x_train, y_train = mydatalog.read_train_batch(args.step)
-      x_val, y_val = mydatalog.read_test_batch(2)
         
       ret = trainer.fit(x_train,y_train)
       if(ret==-1):break
-      if(i%eva_b==0):
+      if(((i+1)*args.step)%args.logstp==0):
+        x_val, y_val = mydatalog.read_test_batch(2)
         trainer.evaluate(x_val,y_val)
         trainer.evaluate(x_train[0:2],y_train[0:2])
 
@@ -148,7 +152,7 @@ if __name__ == "__main__":
       # if(i%10==0):
       #   trainer.set_trainer(data_count=mydatalog._init_conter)
       #   trainer.save()
-      
+
   if(ret==0 and args.save):
     trainer.set_trainer(data_count=mydatalog.train_conter)
     trainer.save()

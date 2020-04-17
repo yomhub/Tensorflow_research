@@ -157,7 +157,5 @@ if __name__ == "__main__":
   tt=tf.zeros((1,1080,1920,3))
   model(tt)
   # model.fit(tt,tf.zeros((1,1080,1920,1)))
-  trainer = UnetTrainer('text',True)
-  trainer.set_trainer(model=model,loss=UnetLoss(),opt=tf.keras.optimizers.Adam())
-  trainer.fit()
+
   print('end')

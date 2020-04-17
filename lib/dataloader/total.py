@@ -23,7 +23,7 @@ class TTText():
       gt_format: string, mask or gtbox
       out_format: string, list or tensor
   """
-  def __init__(self, dir, out_size=[720,1280], gt_format='mask', out_format='list'):
+  def __init__(self, dir, out_size=[720,1280], gt_format='mask', out_format='list', max_size=2048):
     gt_format = gt_format.lower()
     if(gt_format=='mask'):
       self.gt_format = gt_format
@@ -41,6 +41,7 @@ class TTText():
     self.test_conter = 0
     self.train_img_names = None
     self.test_img_names = None
+    self.max_size = max_size if(type(max_size)==list)else [max_size,max_size]
     for root, dirs, files in os.walk(self.xtraindir):
       self.train_img_names = [name for name in files if (os.path.splitext(name)[-1] == ".jpg" or
         os.path.splitext(name)[-1] == ".png" or
@@ -63,10 +64,18 @@ class TTText():
     for mdir in dirs:
       tmp = tf.image.decode_image(tf.io.read_file(os.path.join(self.xtraindir,mdir)))
       if(self.out_size): tmp = tf.image.resize(tmp,self.out_size,'nearest')
+      if(tmp.shape[-3]>self.max_size[0]):
+        tmp = tf.image.resize(tmp,[self.max_size[0],tmp.shape[-2]],'nearest')
+      if(tmp.shape[-2]>self.max_size[1]):
+        tmp = tf.image.resize(tmp,[tmp.shape[-3],self.max_size[1]],'nearest')
       img_list.append(tf.reshape(tmp,[1]+tmp.shape))
 
       tmp = tf.image.decode_image(tf.io.read_file(os.path.join(self.ytraindir,mdir)))
       if(self.out_size): tmp = tf.image.resize(tmp,self.out_size,'nearest')
+      if(tmp.shape[-3]>self.max_size[0]):
+        tmp = tf.image.resize(tmp,[self.max_size[0],tmp.shape[-2]],'nearest')
+      if(tmp.shape[-2]>self.max_size[1]):
+        tmp = tf.image.resize(tmp,[tmp.shape[-3],self.max_size[1]],'nearest')
       msk_list.append(tmp)
 
     if(self.out_format=='tensor'):
@@ -87,10 +96,18 @@ class TTText():
     for mdir in dirs:
       tmp = tf.image.decode_image(tf.io.read_file(os.path.join(self.xtestdir,mdir)))
       if(self.out_size): tmp = tf.image.resize(tmp,self.out_size,'nearest')
+      if(tmp.shape[-3]>self.max_size[0]):
+        tmp = tf.image.resize(tmp,[self.max_size[0],tmp.shape[-2]],'nearest')
+      if(tmp.shape[-2]>self.max_size[1]):
+        tmp = tf.image.resize(tmp,[tmp.shape[-3],self.max_size[1]],'nearest')
       img_list.append(tf.reshape(tmp,[1]+tmp.shape))
       
       tmp = tf.image.decode_image(tf.io.read_file(os.path.join(self.ytestdir,mdir)))
       if(self.out_size): tmp = tf.image.resize(tmp,self.out_size,'nearest')
+      if(tmp.shape[-3]>self.max_size[0]):
+        tmp = tf.image.resize(tmp,[self.max_size[0],tmp.shape[-2]],'nearest')
+      if(tmp.shape[-2]>self.max_size[1]):
+        tmp = tf.image.resize(tmp,[tmp.shape[-3],self.max_size[1]],'nearest')
       msk_list.append(tmp)
 
     if(self.out_format=='tensor'):

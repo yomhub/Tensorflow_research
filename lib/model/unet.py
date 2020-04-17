@@ -51,18 +51,24 @@ class Unet(tf.keras.Model):
     )
 
     # output[-1] ==> output[-2]
-    self.g1upc = tf.keras.layers.UpSampling2D(
-      name = 'g1_UpSampling'
-    )
+    # self.g1upc = tf.keras.layers.UpSampling2D(
+    #   name = 'g1_UpSampling'
+    # )
+    self.g1upc = tf.keras.layers.Conv2DTranspose(
+      filters = self.feature_model.output[-2].shape[-1], 
+      kernel_size = (2, 2),
+      strides = (2, 2),
+      name = 'g1_upconv',
+      )
     self.g1_c1 = tf.keras.layers.Conv2D(
-      filters = 32,
+      filters = self.feature_model.output[-2].shape[-1],
       kernel_size=(1, 1),
       activation=tf.nn.relu,
       name="g1_1x1_conv",
       padding="same",
     )
     self.g1_c2 = tf.keras.layers.Conv2D(
-      filters = 32,
+      filters = self.feature_model.output[-2].shape[-1],
       kernel_size=(3, 3),
       activation=tf.nn.relu,
       name="g1_1x1_conv",
@@ -70,18 +76,24 @@ class Unet(tf.keras.Model):
     )
 
     # output[-2] ==> output[-3]
-    self.g2upc = tf.keras.layers.UpSampling2D(
-      name = 'g2_UpSampling'
-    )
+    # self.g2upc = tf.keras.layers.UpSampling2D(
+    #   name = 'g2_UpSampling'
+    # )
+    self.g2upc = tf.keras.layers.Conv2DTranspose(
+      filters = self.feature_model.output[-3].shape[-1], 
+      kernel_size = (2, 2),
+      strides = (2, 2),
+      name = 'g2_upconv',
+      )
     self.g2_c1 = tf.keras.layers.Conv2D(
-      filters = 32,
-      kernel_size=(1, 1),
+      filters = self.feature_model.output[-3].shape[-1],
+      kernel_size=(1,1),
       activation=tf.nn.relu,
       name="g2_1x1_conv",
       padding="same",
     )
     self.g2_c2 = tf.keras.layers.Conv2D(
-      filters = 32,
+      filters = self.feature_model.output[-3].shape[-1],
       kernel_size=(3, 3),
       activation=tf.nn.relu,
       name="g2_1x1_conv",
@@ -89,18 +101,24 @@ class Unet(tf.keras.Model):
     )
 
     # output[-3] ==> output[-4]
-    self.g3upc = tf.keras.layers.UpSampling2D(
-      name = 'g3_UpSampling'
-    )
+    # self.g3upc = tf.keras.layers.UpSampling2D(
+    #   name = 'g3_UpSampling'
+    # )
+    self.g3upc = tf.keras.layers.Conv2DTranspose(
+      filters = self.feature_model.output[-4].shape[-1], 
+      kernel_size = (2, 2),
+      strides = (2, 2),
+      name = 'g3_upconv',
+      )
     self.g3_c1 = tf.keras.layers.Conv2D(
-      filters = 32,
-      kernel_size=(1, 1),
+      filters = self.feature_model.output[-4].shape[-1],
+      kernel_size=(1,1),
       activation=tf.nn.relu,
       name="g3_1x1_conv",
       padding="same",
     )
     self.g3_c2 = tf.keras.layers.Conv2D(
-      filters = 32,
+      filters = self.feature_model.output[-4].shape[-1],
       kernel_size=(3, 3),
       activation=tf.nn.relu,
       name="g3_1x1_conv",
@@ -109,7 +127,7 @@ class Unet(tf.keras.Model):
 
     self.fin_conv = tf.keras.layers.Conv2D(
       filters = 32,
-      kernel_size=(3, 3),
+      kernel_size=(1,1),
       activation=tf.nn.relu,
       name="final_conv",
       padding="same",
@@ -118,6 +136,7 @@ class Unet(tf.keras.Model):
       filters = 2,
       kernel_size=(3, 3),
       activation=tf.nn.relu,
+      # activation=None,
       name="map_conv",
       padding="same",
     )
@@ -142,7 +161,7 @@ class Unet(tf.keras.Model):
     g2ft = self.g2_c2(g2ft)
 
     # output[-3] ==> output[-4]
-    g3ft = self.g2upc(g2ft)
+    g3ft = self.g3upc(g2ft)
     g3ft = tf.concat([g3ft,ftlist[-4]],axis=-1)
     g3ft = self.g3_c1(g3ft)
     g3ft = self.g3_c2(g3ft)
@@ -153,24 +172,43 @@ class Unet(tf.keras.Model):
     return fm
 
 class UnetLoss(tf.keras.losses.Loss):
-  def __init__(self):
+  """
+    Args: los_mod in :
+      'smp': sampel negtive points to number of postive points
+      'nor': apply negtive/postive normalization on cross entropy
+      'none' or None: directly use sparse_softmax_cross_entropy_with_logits
+  """
+  def __init__(self,los_mod = 'smp'):
     super(UnetLoss, self).__init__()
-
+    self.los_mod = los_mod.lower() if(type(los_mod)==str and los_mod.lower() in ['smp','nor'])else 'none'
+    
   def call(self, y_true, y_pred):
     y_true = tf.image.resize(y_true,y_pred.shape[-3:-1],'nearest')
     y_true = tf.reshape(tf.cast(tf.cast(y_true,tf.bool),tf.int64),[-1])
     y_pred = tf.reshape(y_pred,[-1,y_pred.shape[-1]])
     post = tf.where(y_true>0)[:,0]
     neg = tf.where(y_true<1)[:,0]
-    
-    loss = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(
-      logits=tf.gather(y_pred,post), 
-      labels=tf.gather(y_true,post)
-      )) * (neg.shape[0]/y_true.shape[0]) + \
-    tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(
-      logits=tf.gather(y_pred,neg), 
-      labels=tf.gather(y_true,neg)
-      )) * (post.shape[0]/y_true.shape[0])
 
-    # loss = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=y_pred, labels=y_true)
+    if(self.los_mod=='nor'):
+      loss = tf.reduce_sum(tf.nn.sparse_softmax_cross_entropy_with_logits(
+        logits=tf.gather(y_pred,post), 
+        labels=tf.gather(y_true,post)
+        )) * (neg.shape[0]/y_true.shape[0])+ \
+        tf.reduce_sum(tf.nn.sparse_softmax_cross_entropy_with_logits(
+        logits=tf.gather(y_pred,neg), 
+        labels=tf.gather(y_true,neg)
+        )) * (post.shape[0]/y_true.shape[0])
+    elif(self.los_mod=='smp'):
+      if(neg.shape[0]>post.shape[0]):
+        neg = tf.gather(neg,
+          tf.random.uniform([post.shape[0]],maxval=neg.shape[0]-1,dtype=tf.int32))
+      loss = 0.7*tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(
+        logits=tf.gather(y_pred,post), 
+        labels=tf.gather(y_true,post)
+        )) + 0.3*tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(
+        logits=tf.gather(y_pred,neg), 
+        labels=tf.gather(y_true,neg)
+        ))
+    else:
+      loss = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=y_pred, labels=y_true)
     return loss
