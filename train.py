@@ -16,7 +16,7 @@ from lib.unet_trainer import UnetTrainer
 from lib.tflib.evaluate_tools import draw_boxes
 from lib.tflib.log_tools import save_image
 
-__DEF_INDEX = 1
+__DEF_INDEX = 0
 __DEF_IMG_SIZE = [[1280,720],[int(1280/2),int(720/2)],[640,640]]
 
 __DEF_LOCAL_DIR = os.path.split(__file__)[0]
@@ -100,7 +100,9 @@ if __name__ == "__main__":
     trainer = UnetTrainer(isdebug=isdebug,task_name=tkname)
     mydatalog = TTText(__DEF_TTT_DIR,out_size=[args.datay,args.datax])
     model = Unet()
-    loss = UnetLoss('smp')
+    los_mod = 'none'
+    loss = UnetLoss(los_mod = los_mod)
+    summarize += "\t Loss model: {}\n".format(los_mod)
 
   else:
     # label RCNN
@@ -147,8 +149,10 @@ if __name__ == "__main__":
 
       if(i==5):
         trainer.set_trainer(opt=tf.keras.optimizers.Adam(learning_rate=0.005))
+        trainer.log_txt("\n=======\nChange optimizer in step{}: {}, lr={}.\n=======\n".format((i+1)*args.step,'Adam',0.0001))
       if(i==10):
         trainer.set_trainer(opt=tf.keras.optimizers.Adam(learning_rate=0.001))
+        trainer.log_txt("\n=======\nChange optimizer in step{}: {}, lr={}.\n=======\n".format((i+1)*args.step,'Adam',0.00001))
       # if(i%10==0):
       #   trainer.set_trainer(data_count=mydatalog._init_conter)
       #   trainer.save()

@@ -58,6 +58,8 @@ class Unet(tf.keras.Model):
       filters = self.feature_model.output[-2].shape[-1], 
       kernel_size = (2, 2),
       strides = (2, 2),
+      use_bias = False,
+      activation = 'relu',
       name = 'g1_upconv',
       )
     self.g1_c1 = tf.keras.layers.Conv2D(
@@ -83,6 +85,8 @@ class Unet(tf.keras.Model):
       filters = self.feature_model.output[-3].shape[-1], 
       kernel_size = (2, 2),
       strides = (2, 2),
+      use_bias = False,
+      activation = 'relu',
       name = 'g2_upconv',
       )
     self.g2_c1 = tf.keras.layers.Conv2D(
@@ -108,6 +112,8 @@ class Unet(tf.keras.Model):
       filters = self.feature_model.output[-4].shape[-1], 
       kernel_size = (2, 2),
       strides = (2, 2),
+      use_bias = False,
+      activation = 'relu',
       name = 'g3_upconv',
       )
     self.g3_c1 = tf.keras.layers.Conv2D(
@@ -133,7 +139,7 @@ class Unet(tf.keras.Model):
       padding="same",
     )
     self.map_conv = tf.keras.layers.Conv2D(
-      filters = 2,
+      filters = 3, # [bg, pixel in boundary, pixel inside stroke]
       kernel_size=(3, 3),
       activation=tf.nn.relu,
       # activation=None,
@@ -149,42 +155,56 @@ class Unet(tf.keras.Model):
     ftlist = self.feature_model(inputs)
 
     # output[-1] ==> output[-2]
-    g1ft = self.g1upc(ftlist[-1])
-    g1ft = tf.concat([g1ft,ftlist[-2]],axis=-1)
-    g1ft = self.g1_c1(g1ft)
-    g1ft = self.g1_c2(g1ft)
+    ft = self.g1upc(ftlist[-1])
+    ft = tf.concat([ft,ftlist[-2]],axis=-1)
+    ft = self.g1_c1(ft)
+    ft = self.g1_c2(ft)
 
     # output[-2] ==> output[-3]
-    g2ft = self.g2upc(g1ft)
-    g2ft = tf.concat([g2ft,ftlist[-3]],axis=-1)
-    g2ft = self.g2_c1(g2ft)
-    g2ft = self.g2_c2(g2ft)
+    ft = self.g2upc(ft)
+    ft = tf.concat([ft,ftlist[-3]],axis=-1)
+    ft = self.g2_c1(ft)
+    ft = self.g2_c2(ft)
 
     # output[-3] ==> output[-4]
-    g3ft = self.g3upc(g2ft)
-    g3ft = tf.concat([g3ft,ftlist[-4]],axis=-1)
-    g3ft = self.g3_c1(g3ft)
-    g3ft = self.g3_c2(g3ft)
+    ft = self.g3upc(ft)
+    ft = tf.concat([ft,ftlist[-4]],axis=-1)
+    ft = self.g3_c1(ft)
+    ft = self.g3_c2(ft)
 
-    fm = self.fin_conv(g3ft)
+    fm = self.fin_conv(ft)
     fm = self.map_conv(fm)
 
     return fm
 
 class UnetLoss(tf.keras.losses.Loss):
   """
-    Args: los_mod in :
-      'smp': sampel negtive points to number of postive points
-      'nor': apply negtive/postive normalization on cross entropy
-      'none' or None: directly use sparse_softmax_cross_entropy_with_logits
+    Assume y_true is binary pixel map.
+    Args: 
+      los_mod in :
+        'smp': sampel negtive points to number of postive points
+        'nor': apply negtive/postive normalization on cross entropy
+        'none' or None: directly use sparse_softmax_cross_entropy_with_logits
+      bd_enf: True to apply sobel filter to gt-pixel image,
+        new gt-pixel image will be boundary(class 2) + insede(class 1)
   """
-  def __init__(self,los_mod = 'smp'):
+  def __init__(self,los_mod = 'smp',bd_enf = True):
     super(UnetLoss, self).__init__()
     self.los_mod = los_mod.lower() if(type(los_mod)==str and los_mod.lower() in ['smp','nor'])else 'none'
+    self.bd_enf = True if bd_enf else False
     
   def call(self, y_true, y_pred):
     y_true = tf.image.resize(y_true,y_pred.shape[-3:-1],'nearest')
-    y_true = tf.reshape(tf.cast(tf.cast(y_true,tf.bool),tf.int64),[-1])
+    y_true = tf.cast(tf.cast(y_true,tf.bool),tf.float64) # y_true in [0,1]
+
+    if(y_pred.shape[-1]>=3 and self.bd_enf):
+      # new gt-pixel image will be boundary(class 2) + insede(class 1)
+      y_true = tf.reshape(y_true,[1]+y_true.shape)
+      y_true += tf.norm(tf.image.sobel_edges(y_true),axis=-1)
+      y_true = tf.where(y_true>1.0,2.0,y_true)
+      y_true = tf.cast(y_true,tf.int64)
+
+    y_true = tf.reshape(y_true,[-1])
     y_pred = tf.reshape(y_pred,[-1,y_pred.shape[-1]])
     post = tf.where(y_true>0)[:,0]
     neg = tf.where(y_true<1)[:,0]
