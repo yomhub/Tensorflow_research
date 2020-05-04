@@ -45,20 +45,19 @@ class UnetTrainer(Trainer):
 
   def eval_action(self,x_single,y_single,step,logger):
     y_pred = self.model(x_single)
-
-    y_pred = tf.math.argmax(y_pred,axis=-1)
-    y_pred = tf.reshape(y_pred,y_pred.shape+[1])
+    if(tf.reduce_max(y_pred)>1.0):y_pred/=256.0
+    y_pred = tf.broadcast_to(y_pred,,y_pred.shape[:-1]+[3])
 
     y_single = tf.image.resize(y_single,y_pred.shape[-3:-1],'nearest')
     y_single = tf.where(y_single[:,:,0]>0,1.0,0.0)
     y_single = tf.reshape(y_single,[1]+y_single.shape+[1]) 
 
     # add boundary enhance
-    y_single += tf.norm(tf.image.sobel_edges(y_single),axis=-1)
+    y_single = tf.norm(tf.image.sobel_edges(y_single),axis=-1)
     y_single_rgb = tf.where(y_single>1.2,[1.0,1.0,1.0],[0.0,0.0,0.0])+\
       tf.where(tf.logical_and(y_single>0.0,y_single<1.2),[0.4,0.4,0.4],[0.0,0.0,0.0])
 
-    x_single = x_single/256.0
+    if(tf.reduce_max(x_single)>1.0):x_single/=256.0
     y_pred_rgb = tf.where(y_pred==2,[1.0,1.0,1.0],[0.0,0.0,0.0])+\
       tf.where(y_pred==1,[0.5,0.5,0.5],[0.0,0.0,0.0])
 

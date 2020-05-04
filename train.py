@@ -74,7 +74,7 @@ if __name__ == "__main__":
     mydatalog = SVT(__DEF_SVT_DIR,out_size=[args.datay,args.datax])
     gtformat = 'xywh'
   elif(args.dataset.lower()=='ttt'):
-    mydatalog = TTText(__DEF_TTT_DIR,out_size=[args.datay,args.datax])
+    mydatalog = TTText(__DEF_TTT_DIR,out_size=[args.datay,args.datax],nor=True)
     gtformat = 'mask'
   else:
     mydatalog = CTW(out_size=[args.datay,args.datax],

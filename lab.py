@@ -152,10 +152,40 @@ def t_pre_box_loss_by_msk():
   #   ret = pre_box_loss_by_msk(gt_mask=y_train[i],det_map=pred["l2_bbox_det"],score_map=pred["l2_score"],recf_size=pred["l2_rf_s"],det_map_fom='pix',use_pixel=False)
   #   ret = pre_box_loss_by_msk(gt_mask=y_train[i],det_map=pred["l3_bbox_det"],score_map=pred["l3_score"],recf_size=pred["l3_rf_s"],det_map_fom='pix',use_pixel=False)
 
-if __name__ == "__main__":
-  model = Unet()
-  tt=tf.zeros((1,1080,1920,3))
-  model(tt)
-  # model.fit(tt,tf.zeros((1,1080,1920,1)))
+def restest():
+  res50 = tf.keras.applications.ResNet50(
+    weights='imagenet', 
+    include_top=False)
+  model = tf.keras.Model(
+    inputs=res50.inputs,
+    outputs=[
+      res50.get_layer('pool1_pool').output,
+      # (None, None, None, 64)
+      res50.get_layer('conv2_block3_out').output,
+      # (None, None, None, 256)
+      res50.get_layer('conv3_block4_out').output,
+      # (None, None, None, 512)
+      res50.get_layer('conv4_block6_out').output,
+      # (None, None, None, 1024)
+      res50.get_layer('conv5_block3_out').output
+      # (None, None, None, 2048)
+    ],
+    name='res50'
+  )
+  tt = model(tf.zeros((1,1080,2048,3)))
 
+
+if __name__ == "__main__":
+  print(tf.__version__)
+
+  # # Set CPU as available physical device
+  # my_devices = tf.config.experimental.list_physical_devices(device_type='CPU')
+  # tf.config.experimental.set_visible_devices(devices= my_devices, device_type='CPU')
+
+  # # To find out which devices your operations and tensors are assigned to
+  # tf.debugging.set_log_device_placement(True)
+  model = Unet()
+  loss = UnetLoss()
+  tt = model(tf.zeros((1,1080,2048,3)))
+  lo = loss(tf.zeros((1,1080,2048,1)),tt)
   print('end')

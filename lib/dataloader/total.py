@@ -6,24 +6,42 @@ import math
 import numpy as np
 import tensorflow as tf
 
-_LOCAL_DIR = os.path.split(__file__)[0]
-_ANN_FILENAME = 'ctw-annotations.tar.gz'
-_STW_DIR = os.path.join(_LOCAL_DIR, 'ctw')
-_TRAIN_DIR = os.path.join(_LOCAL_DIR, 'ctw', 'train')
-_TEST_DIR = os.path.join(_LOCAL_DIR, 'ctw', 'test')
-_LOG_FILE = os.path.join(_LOCAL_DIR, 'ctw', 'log.txt')
 _TOTAL_TRAIN_NUM = 1000 * 25 + 887
 _TOTAL_TEST_NUM = 1000 * 6 + 398
+
+def txt_helper(fname,dtype=int):
+  """
+    Return boxs [[y1,x1,y2,x2]...] information.
+    The text format is:
+      One line represent one box, e.g.
+      x: [[206 251 386 542 620 646 550 358 189 140]], y: [[ 633  811  931  946  926  976 1009  989  845  629]], ornt: [u'c'], transcriptions: [u'PETROSAINS']
+      x = X-coordinate
+      y = Y-coordinate
+      ornt = Orientation (c=curve; h=horizontal; m=multi-oriented; #=dont care)
+      transcriptions  = Text
+  """
+  dtype = dtype if(type(dtype)==type)else int
+  dt = lambda x:dtype(x)
+  boxs = []
+  with open(fname,'r') as f:
+    tmp = f.readlines()
+    tmp = [o.split(', ') for o in tmp]
+    for l in tmp: 
+      xs = [dt(o) for o in l[0].split('[[')[-1].split(']]')[0].split()]
+      ys = [dt(o) for o in l[1].split('[[')[-1].split(']]')[0].split()]
+      boxs.append([min(ys), min(xs),max(ys), max(xs)])
+  return boxs
 
 class TTText():
   """
     Args:
-
       out_size: [h,w]
       gt_format: string, mask or gtbox
       out_format: string, list or tensor
+      nor: normalization to [0,1]
+
   """
-  def __init__(self, dir, out_size=[720,1280], gt_format='mask', out_format='list', max_size=2048):
+  def __init__(self, dir, out_size=[720,1280], gt_format='mask', out_format='list', max_size=2048, nor=True):
     gt_format = gt_format.lower()
     if(gt_format=='mask'):
       self.gt_format = gt_format
@@ -32,8 +50,11 @@ class TTText():
     
     self.xtraindir = os.path.join(dir,'Images','Train')
     self.xtestdir = os.path.join(dir,'Images','Test')
-    self.ytraindir = os.path.join(dir,'gt_pixel','Train')
-    self.ytestdir = os.path.join(dir,'gt_pixel','Test')
+    self.pixeltraindir = os.path.join(dir,'gt_pixel','Train')
+    self.pixeltestdir = os.path.join(dir,'gt_pixel','Test')
+    # txt name: 'poly_gt_' + image name + '.txt'
+    self.txttraindir = os.path.join(dir,'gt_txt','Train')
+    self.txttestdir = os.path.join(dir,'gt_txt','Test')
 
     self.out_size = out_size
     self.out_format = 'tensor' if(out_format.lower()=='tensor') else 'list'
@@ -42,15 +63,17 @@ class TTText():
     self.train_img_names = None
     self.test_img_names = None
     self.max_size = max_size if(type(max_size)==list)else [max_size,max_size]
+    self.train_img_names=[]
     for root, dirs, files in os.walk(self.xtraindir):
-      self.train_img_names = [name for name in files if (os.path.splitext(name)[-1] == ".jpg" or
+      self.train_img_names += [name for name in files if (os.path.splitext(name)[-1] == ".jpg" or
         os.path.splitext(name)[-1] == ".png" or
         os.path.splitext(name)[-1] == ".bmp")]
+    self.test_img_names=[]
     for root, dirs, files in os.walk(self.xtestdir):
-      self.test_img_names = [name for name in files if (os.path.splitext(name)[-1] == ".jpg" or
+      self.test_img_names += [name for name in files if (os.path.splitext(name)[-1] == ".jpg" or
         os.path.splitext(name)[-1] == ".png" or
         os.path.splitext(name)[-1] == ".bmp")]
-
+    self.nor = bool(nor)
     self.total_train = len(self.train_img_names)
     self.total_test = len(self.test_img_names)
 
@@ -59,24 +82,29 @@ class TTText():
     cur_conter, slice_a, slice_b = self.find_slice(self.train_conter,self.total_train,batch_size)
     img_list = []
     msk_list = []
+    boxs = []
     dirs = (img_names[slice_a] + img_names[slice_b]) if(slice_b)else img_names[slice_a]
-
     for mdir in dirs:
+      # read image
       tmp = tf.image.decode_image(tf.io.read_file(os.path.join(self.xtraindir,mdir)))
+      if(self.nor):
+        tmp = tf.image.per_image_standardization(tmp)
       if(self.out_size): tmp = tf.image.resize(tmp,self.out_size,'nearest')
       if(tmp.shape[-3]>self.max_size[0]):
         tmp = tf.image.resize(tmp,[self.max_size[0],tmp.shape[-2]],'nearest')
       if(tmp.shape[-2]>self.max_size[1]):
         tmp = tf.image.resize(tmp,[tmp.shape[-3],self.max_size[1]],'nearest')
       img_list.append(tf.reshape(tmp,[1]+tmp.shape))
-
-      tmp = tf.image.decode_image(tf.io.read_file(os.path.join(self.ytraindir,mdir)))
+      # read mask
+      tmp = tf.image.decode_image(tf.io.read_file(os.path.join(self.pixeltraindir,mdir)))
       if(self.out_size): tmp = tf.image.resize(tmp,self.out_size,'nearest')
       if(tmp.shape[-3]>self.max_size[0]):
         tmp = tf.image.resize(tmp,[self.max_size[0],tmp.shape[-2]],'nearest')
       if(tmp.shape[-2]>self.max_size[1]):
         tmp = tf.image.resize(tmp,[tmp.shape[-3],self.max_size[1]],'nearest')
       msk_list.append(tmp)
+      # read box
+      boxs.append(txt_helper(os.path.join(self.txttraindir,os.path.splitext(mdir)[0],'.txt'),float))
 
     if(self.out_format=='tensor'):
       img_list = tf.convert_to_tensor(img_list)
@@ -91,10 +119,13 @@ class TTText():
     cur_conter, slice_a, slice_b = self.find_slice(self.test_conter,self.total_test,batch_size)
     img_list = []
     msk_list = []
+    boxs = []
     dirs = (img_names[slice_a] + img_names[slice_b]) if(slice_b)else img_names[slice_a]
 
     for mdir in dirs:
       tmp = tf.image.decode_image(tf.io.read_file(os.path.join(self.xtestdir,mdir)))
+      if(self.nor):
+        tmp = tf.image.per_image_standardization(tmp)
       if(self.out_size): tmp = tf.image.resize(tmp,self.out_size,'nearest')
       if(tmp.shape[-3]>self.max_size[0]):
         tmp = tf.image.resize(tmp,[self.max_size[0],tmp.shape[-2]],'nearest')
@@ -102,13 +133,14 @@ class TTText():
         tmp = tf.image.resize(tmp,[tmp.shape[-3],self.max_size[1]],'nearest')
       img_list.append(tf.reshape(tmp,[1]+tmp.shape))
       
-      tmp = tf.image.decode_image(tf.io.read_file(os.path.join(self.ytestdir,mdir)))
+      tmp = tf.image.decode_image(tf.io.read_file(os.path.join(self.pixeltestdir,mdir)))
       if(self.out_size): tmp = tf.image.resize(tmp,self.out_size,'nearest')
       if(tmp.shape[-3]>self.max_size[0]):
         tmp = tf.image.resize(tmp,[self.max_size[0],tmp.shape[-2]],'nearest')
       if(tmp.shape[-2]>self.max_size[1]):
         tmp = tf.image.resize(tmp,[tmp.shape[-3],self.max_size[1]],'nearest')
       msk_list.append(tmp)
+      boxs.append(txt_helper(os.path.join(self.txttraindir,os.path.splitext(mdir)[0],'.txt'),float))
 
     if(self.out_format=='tensor'):
       img_list = tf.convert_to_tensor(img_list)
@@ -149,4 +181,6 @@ class TTText():
       slice_b = None
 
     return counter,slice_a,slice_b
+
+
 
