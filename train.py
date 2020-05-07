@@ -46,8 +46,8 @@ if __name__ == "__main__":
   parser.add_argument('--learnrate', type=float, help='Learning rate.',default=0.001)
   args = parser.parse_args()
   time_start = datetime.now()
-
   isdebug = args.debug
+
   # isdebug = True
 
   summarize = "Start when {}.\n".format(time_start.strftime("%Y%m%d-%H%M%S")) +\

@@ -45,27 +45,28 @@ class UnetTrainer(Trainer):
 
   def eval_action(self,x_single,y_single,step,logger):
     y_pred = self.model(x_single)
-    if(tf.reduce_max(y_pred)>1.0):y_pred/=256.0
-    y_pred = tf.broadcast_to(y_pred,,y_pred.shape[:-1]+[3])
-
-    y_single = tf.image.resize(y_single,y_pred.shape[-3:-1],'nearest')
-    y_single = tf.where(y_single[:,:,0]>0,1.0,0.0)
-    y_single = tf.reshape(y_single,[1]+y_single.shape+[1]) 
+    mask = y_pred['mask']
+    if(tf.reduce_max(mask)>1.0):mask/=256.0
+    mask = tf.broadcast_to(mask,mask.shape[:-1]+[3])
+    y_mask = y_single['mask']
+    y_mask = tf.image.resize(y_mask,mask.shape[-3:-1],'nearest')
+    y_mask = tf.where(y_mask[:,:,0]>0,1.0,0.0)
+    y_mask = tf.reshape(y_mask,[1]+y_mask.shape+[1]) 
 
     # add boundary enhance
-    y_single = tf.norm(tf.image.sobel_edges(y_single),axis=-1)
-    y_single_rgb = tf.where(y_single>1.2,[1.0,1.0,1.0],[0.0,0.0,0.0])+\
-      tf.where(tf.logical_and(y_single>0.0,y_single<1.2),[0.4,0.4,0.4],[0.0,0.0,0.0])
+    y_mask = tf.norm(tf.image.sobel_edges(y_mask),axis=-1)
+    y_mask_rgb = tf.where(y_mask>1.2,[1.0,1.0,1.0],[0.0,0.0,0.0])+\
+      tf.where(tf.logical_and(y_mask>0.0,y_mask<1.2),[0.4,0.4,0.4],[0.0,0.0,0.0])
 
     if(tf.reduce_max(x_single)>1.0):x_single/=256.0
-    y_pred_rgb = tf.where(y_pred==2,[1.0,1.0,1.0],[0.0,0.0,0.0])+\
-      tf.where(y_pred==1,[0.5,0.5,0.5],[0.0,0.0,0.0])
+    mask_rgb = tf.where(mask==2,[1.0,1.0,1.0],[0.0,0.0,0.0])+\
+      tf.where(mask==1,[0.5,0.5,0.5],[0.0,0.0,0.0])
 
-    tmp = tf.concat([tf.image.resize(x_single,y_pred.shape[-3:-1]),
+    tmp = tf.concat([tf.image.resize(x_single,mask.shape[-3:-1]),
       # tf.broadcast_to(y_single,y_single.shape[:-1]+[3]),
-      y_single_rgb,
+      y_mask_rgb,
       # tf.broadcast_to(y_pred,y_pred.shape[:-1]+[3])],
-      y_pred_rgb
+      mask_rgb
       ],
       axis=-2)
 

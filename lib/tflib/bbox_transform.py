@@ -115,7 +115,7 @@ def clip_boxes_tf(boxes, im_info, order='xyxy'):
 @tf.function
 def feat_layer_cod_gen(recf_size,feat_size,class_num=1):
   """
-    Generate feature layer coordinate in orign image.
+    Generate feature layer bias coordinate in orign image.
     Args:
       recf_size: receptive field size [rh,rw,sy,sx]
         where rh,rw is receptive field size
@@ -159,6 +159,28 @@ def xywh2yxyx(boxes):
     boxes = tf.stack([boxes[:,0],boxes[:,-3],boxes[:,-4],boxes[:,-3]+boxes[:,-1],boxes[:,-4]+boxes[:,-2]],axis=1)
   return boxes
 
+@tf.function
+def yxyx2xywh(boxes:tf.Tensor, center:bool=True) -> tf.Tensor:
+  """
+  Convert [y1,x1,y2,x2] to [cx,cy,w,h]
+    Arg: 
+      boxes with tensor shape (num_box,5) or (num_box,4)
+        where 5 or 4 is ([label] +) [y1,x1,y2,x2]
+      center: True to locate [cx,cy] in center of box
+        False to locate [cx,cy] in topleft of box
+    Return: same shape tensor with ([label] +) [cx,cy,w,h]
+  """
+  ws = tf.math.abs(boxes[:,-1]-boxes[:,-3])
+  hs = tf.math.abs(boxes[:,-2]-boxes[:,-4])
+  cxs = boxes[:,-3]+ws/2.0 if(center)else boxes[:,-3]
+  cys = boxes[:,-4]+hs/2.0 if(center)else boxes[:,-4]
+
+  if(boxes.shape[-1]==4):
+    boxes = tf.stack([cxs,cys,ws,hs],axis=1)
+  else:
+    boxes = tf.stack([boxes[:,0],cxs,cys,ws,hs],axis=1)
+  return boxes
+
 # @tf.function
 def map2coordinate(boxes,org_cod,targ_cod):
   """
@@ -171,45 +193,63 @@ def map2coordinate(boxes,org_cod,targ_cod):
   """
   fact_x = targ_cod[1]/org_cod[1]
   fact_y = targ_cod[0]/org_cod[0]
-  
-  return tf.stack([boxes[:,0]*fact_y,boxes[:,1]*fact_x,boxes[:,2]*fact_y,boxes[:,3]*fact_x],axis=1)
+  if(boxes.shape[-1]==5):
+    return tf.stack([boxes[:,0],boxes[:,-4]*fact_y,boxes[:,-3]*fact_x,boxes[:,-2]*fact_y,boxes[:,-1]*fact_x],axis=1)
+  else:
+    return tf.stack([boxes[:,-4]*fact_y,boxes[:,-3]*fact_x,boxes[:,-2]*fact_y,boxes[:,-1]*fact_x],axis=1)
 
 def gen_label_from_gt(layer_shape,recf_size,gt_box,img_shape,bg_label=-1):
   """
+    Generate label mask from gtbox
     Args: 
       layer_shape: layer shape [layer_height, layer_width]
-      recf_size: receptive field size (rf_h,rf_w,stride_y,stride_x)
+      recf_size: 
+        receptive field size (rf_h,rf_w,stride_y,stride_x)
+        or none for center point model.
       gt_box: (total_gts,5) with [class, y1, x1, y2, x2]
       img_shape: 
         none with a normalized gt_box coordinate
-        or image shape [height, width]
+        or image shape [height, width] with gt_box in original coordinate
     Return:
-      tf.int32 tensor with (layer_height, layer_width)
-      where gt will label in [0,numClass-1]
-      and bg is -1
-  """
-  if(img_shape!=None):
-    cube_h,cube_w = img_shape[0]/layer_shape[0],img_shape[1]/layer_shape[1]
-  else:
-    cube_h,cube_w = 1,1
-  cube_h,cube_w,stride_y,stride_x = float(recf_size[0]),float(recf_size[1]),float(recf_size[2]),float(recf_size[3])
+      label mask:
+        tf.int32 tensor with shape (layer_height, layer_width)
+        where gt will label in [0,numClass-1]
+        and bg is -1
+  """  
   gtlabel = gt_box[:,0].numpy()
   gtlabel = gtlabel.astype(np.int32)
-  bbox = gt_box[:,1:]
+  # init mask as bg label
   label_np = np.full(layer_shape,bg_label,np.int32)
-  for i in range(gtlabel.shape[0]):
-    x_start,x_end = bbox[i,1] / stride_x,(bbox[i,3]-cube_w) / stride_x
-    y_start,y_end = bbox[i,0] / stride_y,(bbox[i,2]-cube_h) / stride_y
-    x_start = math.floor(x_start) if(x_start - int(x_start)) < 0.7 else math.ceil(x_start)
-    y_start = math.floor(y_start) if(y_start - int(y_start)) < 0.7 else math.ceil(y_start)
-    x_end = math.floor(x_end) if(x_end - int(x_end)) < 0.2 else math.ceil(x_end)
-    y_end = math.floor(y_end) if(y_end - int(y_end)) < 0.2 else math.ceil(y_end)
-    x_start = max(x_start,0)
-    y_start = max(y_start,0)
-    y_end = min(y_end,layer_shape[0])
-    x_end = min(x_end,layer_shape[1])
-    label_np[y_start:y_end,x_start:x_end]=gtlabel[i]
-    
+
+  if(recf_size!=None):
+    # label pixels inside receptive field
+    cube_h,cube_w,stride_y,stride_x = float(recf_size[0]),float(recf_size[1]),float(recf_size[2]),float(recf_size[3])
+    bbox = gt_box[:,1:]
+    for i in range(gtlabel.shape[0]):
+      x_start,x_end = bbox[i,1] / stride_x,(bbox[i,3]-cube_w) / stride_x
+      y_start,y_end = bbox[i,0] / stride_y,(bbox[i,2]-cube_h) / stride_y
+      x_start = math.floor(x_start) if(x_start - int(x_start)) < 0.7 else math.ceil(x_start)
+      y_start = math.floor(y_start) if(y_start - int(y_start)) < 0.7 else math.ceil(y_start)
+      x_end = math.floor(x_end) if(x_end - int(x_end)) < 0.2 else math.ceil(x_end)
+      y_end = math.floor(y_end) if(y_end - int(y_end)) < 0.2 else math.ceil(y_end)
+      x_start = max(x_start,0)
+      y_start = max(y_start,0)
+      y_end = min(y_end,layer_shape[0])
+      x_end = min(x_end,layer_shape[1])
+      label_np[y_start:y_end,x_start:x_end]=gtlabel[i]
+  else:
+    # label pixel in center of box
+    if(img_shape!=None):
+      stride_y,stride_x = img_shape[0]/layer_shape[0],img_shape[1]/layer_shape[1]
+    else:
+      stride_y,stride_x = 1,1
+      
+    bbox = yxyx2xywh(gt_box[:,1:])
+    csxs,cexs = tf.math.floor(bbox[:,0]).numpy(),tf.math.ceil(bbox[:,0]).numpy()+1
+    csys,ceys = tf.math.floor(bbox[:,1]).numpy(),tf.math.ceil(bbox[:,1]).numpy()+1
+    for i in range(gtlabel.shape[0]):
+      label_np[csys[i]:y_end,ceys[i]:cexs[i]]=gtlabel[i]
+
   return tf.convert_to_tensor(label_np,dtype=tf.int32)
 
 def gen_label_with_width_from_gt(layer_shape,gt_box,img_shape=None,bg_label=-1):
@@ -256,6 +296,7 @@ def gen_label_with_width_from_gt(layer_shape,gt_box,img_shape=None,bg_label=-1):
 
 def build_boxex_from_path(cls_prb,box_prd,ort_map,target_class,cls_threshold=0.7,dir_threshold=0.7):
   """
+    Build connect boxes into box list.
     Args:
       cls_prb: tesnor with (1,h,w,num_class), possibilities
       box_prd: tesnor with (1,h,w,(num_class-1)*4)
