@@ -239,25 +239,34 @@ class UnetLoss(tf.keras.losses.Loss):
     super(UnetLoss, self).__init__()
     self.los_mod = los_mod.lower() if(type(los_mod)==str and los_mod.lower() in ['smp','nor'])else 'none'
     self.shr_co = float(shr) if(shr<0.5 and shr>=0.0)else 0.2
+    self.cur_loss={}
   
   def mask_loss(self, y_true, y_pred, gtbox):
     y_true = tf.image.resize(y_true,y_pred.shape[-3:-1],'nearest')
+    y_true = tf.norm(tf.image.sobel_edges(y_true),axis=-1)
     gtbox = map2coordinate(gtbox,[1.0,1.0],y_pred.shape[-3:-1])
     gtbox = tf.cast(yxyx2xywh(gtbox,center=False),tf.int32)
+    c=0.0
     loss = 0.0
     for i in range(gtbox.shape[0]):
-      s_yt = tf.image.crop_to_bounding_box(y_true,gtbox[i][-3],gtbox[i][-4],gtbox[i][-1],gtbox[i][-2])
-      s_yp = tf.image.crop_to_bounding_box(y_pred,gtbox[i][-3],gtbox[i][-4],gtbox[i][-1],gtbox[i][-2])
-      s_yt = tf.reshape(tf.cast(s_yt,tf.float64),[-1])
-      s_yp = tf.reshape(tf.cast(s_yp,tf.float64),[-1])
-      loss += 1.0 - 2.0*tf.math.reduce_sum(s_yt*s_yp)/tf.math.reduce_sum(s_yt*s_yt+s_yp*s_yp)
-    loss /= gtbox.shape[0]
+      if(gtbox[i][-1]<=0 or gtbox[i][-2]<=0):continue
+      try:
+        s_yt = tf.image.crop_to_bounding_box(y_true,gtbox[i][-3],gtbox[i][-4],gtbox[i][-1],gtbox[i][-2])
+        s_yp = tf.image.crop_to_bounding_box(y_pred,gtbox[i][-3],gtbox[i][-4],gtbox[i][-1],gtbox[i][-2])
+        s_yt = tf.reshape(tf.cast(s_yt,tf.float64),[-1])
+        s_yp = tf.reshape(tf.cast(s_yp,tf.float64),[-1])
+        loss += 1.0 - 2.0*tf.math.reduce_sum(s_yt*s_yp)/tf.math.reduce_sum(s_yt*s_yt+s_yp*s_yp)
+        c+=1.0
+      except:
+        continue
+    loss /= c
 
     return tf.cast(loss,tf.float32)
 
   def box_score_loss(self, gtbox, y_pred_gt, y_pred_scr):
-    loss = 0.0
-    gtbox = yxyx2xywh(gtbox)
+    bxloss = 0.0
+    scloss = 0.0
+    gtbox = yxyx2xywh(gtbox,True)
     sh_gtbox = tf.stack([
       gtbox[:,-4]*y_pred_scr.shape[-2], # cx
       gtbox[:,-3]*y_pred_scr.shape[-3], # cy
@@ -274,10 +283,10 @@ class UnetLoss(tf.keras.losses.Loss):
     label = np.zeros(y_pred_scr.shape[-3:-1],dtype=np.int32)
     for i in range(gtbox.shape[0]):
       label[csys[i]:ceys[i],csxs[i]:cexs[i]] = 1
-      loss += tf.reduce_mean(
+      bxloss += tf.reduce_mean(
         tf.reduce_sum(tf.math.abs(y_pred_gt[0,csys[i]:ceys[i],csxs[i]:cexs[i],:]-gtbox[i,-4:]),axis=-1)
         )
-    loss = tf.math.divide(loss,gtbox.shape[0])
+    bxloss = tf.math.divide(bxloss,gtbox.shape[0])
 
     label = tf.cast(tf.reshape(label,[-1]),tf.int64)
     y_pred_scr = tf.reshape(y_pred_scr,[-1,y_pred_scr.shape[-1]])
@@ -285,7 +294,7 @@ class UnetLoss(tf.keras.losses.Loss):
     neg = tf.where(label<1)[:,0]
 
     if(self.los_mod=='nor'):
-      loss += tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(
+      scloss += tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(
         logits=tf.gather(y_pred_scr,post), 
         labels=tf.gather(label,post)
         )) * (neg.shape[0]/label.shape[0])+ \
@@ -297,7 +306,7 @@ class UnetLoss(tf.keras.losses.Loss):
       if(neg.shape[0]>post.shape[0]):
         neg = tf.gather(neg,
           tf.random.uniform([post.shape[0]],maxval=neg.shape[0]-1,dtype=tf.int32))
-      loss += tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(
+      scloss += tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(
         logits=tf.gather(y_pred_scr,post), 
         labels=tf.gather(label,post)
         )) + tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(
@@ -305,13 +314,17 @@ class UnetLoss(tf.keras.losses.Loss):
         labels=tf.gather(label,neg)
         ))
     else:
-      loss += tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(logits=y_pred_scr, labels=label))
+      scloss += tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(logits=y_pred_scr, labels=label))
 
-    return tf.cast(loss,tf.float32)
+    return tf.cast(bxloss,tf.float32),tf.cast(scloss,tf.float32)
 
   def call(self, y_true, y_pred):
-    loss = 0.0
-    loss += self.mask_loss(y_true['mask'],y_pred['mask'],y_true['gt'][:,-4:])
-    loss += self.box_score_loss(gtbox=y_true['gt'][:,-4:],y_pred_gt=y_pred['gt'],y_pred_scr=y_pred['scr'])
 
-    return loss
+    mskloss = self.mask_loss(y_true['mask'],y_pred['mask'],y_true['gt'][:,-4:])
+    bxloss,scloss = self.box_score_loss(gtbox=y_true['gt'][:,-4:],y_pred_gt=y_pred['gt'],y_pred_scr=y_pred['scr'])
+    self.cur_loss={
+      'mask':mskloss,
+      'box':bxloss,
+      'score':scloss,
+      }
+    return mskloss + bxloss + scloss

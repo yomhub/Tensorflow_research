@@ -7,14 +7,16 @@ from tflib.bbox_transform import xywh2yxyx
 def draw_boxes(img,boxes,gtformat='xywh'):
   """
     Args:
-      image: (image_num,H,W,1 or 3) tensor
-      boxes: list of (box_num,4) tensor where 4 is
+      image: (n,H,W,1 or 3) tensor
+      boxes: list [tensor] or tensor with (box_num,4) shape where 4 is
         xywh with [xstart, ystart, width, height]
+        cxywh with [xcenter, ycenter, width, height]
         yxyx with [y_min, x_min, y_max, x_max]
-      gtformat: xywh or yxyx
+      gtformat: xywh or yxyx or cxywh
     Return:
-      drawed image tensor with (image_num,H,W,1 or 3) 
+      drawed image tensor with (n,H,W,1 or 3) 
   """
+  gtformat = gtformat.lower() if(gtformat.lower() in ['xywh','yxyx','cxywh'])else 'xywh'
   imgh=float(img.shape[-3])
   imgw=float(img.shape[-2])
   if(len(img.shape)==3):
@@ -27,9 +29,12 @@ def draw_boxes(img,boxes,gtformat='xywh'):
   ret = []
   for i in range(len(boxes)):
     if(gtformat=='xywh'):
-      box = tf.reshape(xywh2yxyx(boxes[i][:,-4:]),[1,-1,4])
+      box = tf.reshape(xywh2yxyx(boxes[i][:,-4:],False),[1,-1,4])
+    elif(gtformat=='cxywh'):
+      box = tf.reshape(xywh2yxyx(boxes[i][:,-4:],True),[1,-1,4])
     else:
       box = tf.reshape(boxes[i],[1,-1,4])
+      
     if(tf.reduce_max(box)>1.0):
       box = tf.stack([box[0,:,0]/imgh,box[0,:,1]/imgw,box[0,:,2]/imgh,box[0,:,3]/imgw],axis=1)
       box = tf.reshape(box,[1,-1,4])

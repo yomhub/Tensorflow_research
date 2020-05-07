@@ -147,20 +147,26 @@ def feat_layer_cod_gen(recf_size,feat_size,class_num=1):
   return tf.reshape(det_mrt,[1,]+det_mrt.shape[0:2]+[4*class_num])
 
 @tf.function
-def xywh2yxyx(boxes):
+def xywh2yxyx(boxes:tf.Tensor, center:bool=False) -> tf.Tensor:
   """
     Arg: boxes with tensor shape (num_box,5) or (num_box,4)
       where 5 or 4 is ([label] +) [x,y,w,h]
     Return: same shape tensor with ([label] +) [y1,x1,y2,x2]
   """
   if(boxes.shape[-1]==4):
-    boxes = tf.stack([boxes[:,-3],boxes[:,-4],boxes[:,-3]+boxes[:,-1],boxes[:,-4]+boxes[:,-2]],axis=1)
+    if(center):
+      boxes = tf.stack([boxes[:,-3]-boxes[:,-1]/2.0,boxes[:,-4]-boxes[:,-2]/2.0,boxes[:,-3]+boxes[:,-1]/2.0,boxes[:,-4]+boxes[:,-2]/2.0],axis=1)
+    else:
+      boxes = tf.stack([boxes[:,-3],boxes[:,-4],boxes[:,-3]+boxes[:,-1],boxes[:,-4]+boxes[:,-2]],axis=1)
   else:
-    boxes = tf.stack([boxes[:,0],boxes[:,-3],boxes[:,-4],boxes[:,-3]+boxes[:,-1],boxes[:,-4]+boxes[:,-2]],axis=1)
+    if(center):
+      boxes = tf.stack([boxes[:,0],boxes[:,-3]-boxes[:,-1]/2.0,boxes[:,-4]-boxes[:,-2]/2.0,boxes[:,-3]+boxes[:,-1]/2.0,boxes[:,-4]+boxes[:,-2]/2.0],axis=1)
+    else:
+      boxes = tf.stack([boxes[:,0],boxes[:,-3],boxes[:,-4],boxes[:,-3]+boxes[:,-1],boxes[:,-4]+boxes[:,-2]],axis=1)
   return boxes
 
 @tf.function
-def yxyx2xywh(boxes:tf.Tensor, center:bool=True) -> tf.Tensor:
+def yxyx2xywh(boxes:tf.Tensor, center:bool=False) -> tf.Tensor:
   """
   Convert [y1,x1,y2,x2] to [cx,cy,w,h]
     Arg: 
