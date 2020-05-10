@@ -48,7 +48,7 @@ if __name__ == "__main__":
   time_start = datetime.now()
   isdebug = args.debug
   lr = args.learnrate
-  # isdebug = True
+  isdebug = True
 
   summarize = "Start when {}.\n".format(time_start.strftime("%Y%m%d-%H%M%S")) +\
     "Running with: \n\t Use proposal: {},\n\t Is debug: {}.\n".format(args.proposal,args.debug)+\
@@ -74,7 +74,7 @@ if __name__ == "__main__":
     mydatalog = SVT(__DEF_SVT_DIR,out_size=[args.datay,args.datax])
     gtformat = 'xywh'
   elif(args.dataset.lower()=='ttt'):
-    mydatalog = TTText(__DEF_TTT_DIR,out_size=[args.datay,args.datax],nor=True)
+    mydatalog = TTText(__DEF_TTT_DIR,out_size=None,nor=True,max_size=1280)
     gtformat = 'mask'
   else:
     mydatalog = CTW(out_size=[args.datay,args.datax],
@@ -100,8 +100,9 @@ if __name__ == "__main__":
     trainer = UnetTrainer(isdebug=isdebug,task_name=tkname)
     mydatalog = TTText(__DEF_TTT_DIR,out_size=[args.datay,args.datax])
     model = Unet()
-    los_mod = 'none'
-    loss = UnetLoss(los_mod = los_mod)
+    los_mod = 'nor'
+    part_mask_loss = True
+    loss = UnetLoss(los_mod = los_mod,part_mask_loss=part_mask_loss)
     summarize += "\t Loss model: {}\n".format(los_mod)
 
   else:
@@ -136,25 +137,21 @@ if __name__ == "__main__":
   else:
     islog=False
     trainer.set_trainer(model=model,loss=loss,opt=optimizer)
-
+    x_train, y_train = mydatalog.read_train_batch(args.step)
     for i in range(args.batch):
-      x_train, y_train = mydatalog.read_train_batch(args.step)
+      # x_train, y_train = mydatalog.read_train_batch(args.step)
         
       ret = trainer.fit(x_train,y_train)
       if(ret==-1):break
       if(((i+1)*args.step)%args.logstp==0):
         x_val, y_val = mydatalog.read_test_batch(2)
-        trainer.evaluate(x_val,y_val)
-        trainer.evaluate(x_train[0:2],y_train[0:2])
+        # trainer.evaluate(x_val,y_val)
+        trainer.evaluate(x_train, y_train)
 
       if(((i+1)*args.step)%200==0):
         lr*=0.9
         trainer.set_trainer(opt=tf.keras.optimizers.Adam(learning_rate=lr))
         trainer.log_txt("\n=======\nChange optimizer in step{}: {}, lr={}.\n=======\n".format((i+1)*args.step,'Adam',lr))
-
-      # if(i%10==0):
-      #   trainer.set_trainer(data_count=mydatalog._init_conter)
-      #   trainer.save()
 
   if(ret==0 and args.save):
     trainer.set_trainer(data_count=mydatalog.train_conter)

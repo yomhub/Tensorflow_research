@@ -62,8 +62,44 @@
 |conv5_block1_out|
 
 
+# Res net Code
+```
+    res50 = tf.keras.applications.ResNet50(
+      # input_tensor=tf.keras.Input(shape=input_shape[-3:]),
+      weights='imagenet', 
+      include_top=False)
+    self.max_scale_factor = 16
+    self.feature_model = tf.keras.Model(
+      inputs=res50.inputs,
+      outputs=[
+        res50.get_layer('pool1_pool').output,
+        # 1/4, ch=64
+        res50.get_layer('conv2_block3_out').output,
+        # 1/4, ch=256
+        res50.get_layer('conv3_block4_out').output,
+        # 1/8, ch=512
+        res50.get_layer('conv4_block6_out').output,
+        # 1/16, ch=1024
+        # res50.get_layer('conv5_block3_out').output
+        # 1/32, ch=2048
+      ],
+      name='res50'
+    )
 
+```
 
+# UP conv coed
+
+```
+    self.g1upc = tf.keras.layers.Conv2DTranspose(
+      filters = g1_g3_chs_list[0], 
+      kernel_size = (3, 3),
+      strides = (3, 3),
+      use_bias = False,
+      activation = 'relu',
+      name = 'g1_upconv',
+      )
+```
 
 
 

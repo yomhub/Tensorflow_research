@@ -19,6 +19,7 @@ def draw_boxes(img,boxes,gtformat='xywh'):
   gtformat = gtformat.lower() if(gtformat.lower() in ['xywh','yxyx','cxywh'])else 'xywh'
   imgh=float(img.shape[-3])
   imgw=float(img.shape[-2])
+
   if(len(img.shape)==3):
     img = tf.reshape(img,[1,]+img.shape)
   if(type(boxes)!=list):
@@ -302,8 +303,8 @@ def random_gt_generate(img, gtbox, increment=10, multiple=None, max_box_pre=None
 def label_overlap_tf(gt_boxes,org_size,feat_label):
   """
     Args:
-      gt_boxes: tensor (gt_num,5) with [label,y1,x1,y2,x2]
-        or (gt_num,4)
+      gt_boxes: tensor (gt_num,5 or 4) with 
+        [(label,) y1,x1,y2,x2]
       org_size: [h,w] of original image
       feat_label: tensor (h,w) with [label]
     Return:
@@ -336,7 +337,7 @@ def gen_label_from_prob(probs):
   """
     Args: probs: tensor with shape (h,w,num_class)
       or shape (1,h,w,num_class)
-    Return: label tensor with shape (h,w) with tf.int16
+    Return: label tensor with shape (h,w) with tf.int
       label will be the subscript of highest possible
       and value in [0,num_class-1]
   """

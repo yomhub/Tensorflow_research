@@ -16,9 +16,11 @@ class UnetTrainer(Trainer):
   def __init__(self,
     task_name,isdebug,
     logs_path = LOGS_PATH,
-    model_path = MODEL_PATH,):
+    model_path = MODEL_PATH,
+    log_ft = False):
     Trainer.__init__(self,task_name=task_name,isdebug=isdebug,logs_path = logs_path,model_path = model_path,)
     self.cur_loss = 0
+    self.log_ft = log_ft
 
   def train_action(self,x_single,y_single,step,logger):
     if(len(y_single['mask'].shape)==3):y_single['mask'] = tf.reshape(y_single['mask'],[1]+y_single['mask'].shape)
@@ -36,6 +38,13 @@ class UnetTrainer(Trainer):
     auto_scalar(self.loss.cur_loss['mask'],step,"Mask loss")
     auto_scalar(self.loss.cur_loss['box'],step,"Box loss")
     auto_scalar(self.loss.cur_loss['score'],step,"Score loss")
+    
+    if(self.log_ft):
+      tmp = tf.reduce_sum(self.model.ft,axis=-1,keepdims=True)
+      tmp = tf.image.per_image_standardization(tmp)
+      tf.summary.image(
+        name="Feature image in step {}".format(step),
+        data=tmp,step=0,max_outputs=1)
     return 0
 
   def batch_callback(self,batch_size,logger,time_usage):
@@ -79,7 +88,8 @@ class UnetTrainer(Trainer):
       axis=-2)
 
     tf.summary.image(
-      name="Image|GT|Pred in step {}.".format(self.current_step),
+      name="Image|GT|Pred",
+      # name="Image|GT|Pred in step {}".format(step),
       data=tmp,step=0,max_outputs=1)
 
     

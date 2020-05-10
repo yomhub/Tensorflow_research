@@ -174,18 +174,32 @@ def restest():
   )
   tt = model(tf.zeros((1,1080,2048,3)))
 
+def draw_dataset():
+  fr = tf.summary.create_file_writer(os.path.join(__DEF_LOCAL_DIR,'log','TTT_images'))
+  fr.set_as_default()
+  loader = TTText(__DEF_TTT_DIR,out_size=[720,1280])
+  x_train, y_train = loader.read_train_batch(50)
+
+  for i in range(len(y_train)):
+    tmp = tf.cast(x_train[i],tf.float32)
+    if(len(tmp.shape)==3):tmp = tf.reshape(tmp,[1]+tmp.shape)
+    box = y_train[i]['gt'][:,-4:]
+    box = tf.reshape(box,[1]+box.shape)
+    col = tf.random.uniform(
+      (box.shape[-2],3),
+      minval=0,
+      maxval=254,
+      )
+    tmp = tf.image.draw_bounding_boxes(tmp,box,col)
+    tmp /= 255.0
+    tf.summary.image('TTT_image',tmp,i,max_outputs=50)
+
 
 if __name__ == "__main__":
   print(tf.__version__)
 
-  # # Set CPU as available physical device
-  # my_devices = tf.config.experimental.list_physical_devices(device_type='CPU')
-  # tf.config.experimental.set_visible_devices(devices= my_devices, device_type='CPU')
-
-  # # To find out which devices your operations and tensors are assigned to
-  # tf.debugging.set_log_device_placement(True)
   model = Unet()
+  tt=model(tf.zeros((1,720,1080,3)))
   loss = UnetLoss()
-  tt = model(tf.zeros((1,1080,2048,3)))
-  lo = loss(tf.zeros((1,1080,2048,1)),tt)
+  
   print('end')
