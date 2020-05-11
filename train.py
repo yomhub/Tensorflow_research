@@ -48,7 +48,7 @@ if __name__ == "__main__":
   time_start = datetime.now()
   isdebug = args.debug
   lr = args.learnrate
-  isdebug = True
+  # isdebug = True
 
   summarize = "Start when {}.\n".format(time_start.strftime("%Y%m%d-%H%M%S")) +\
     "Running with: \n\t Use proposal: {},\n\t Is debug: {}.\n".format(args.proposal,args.debug)+\

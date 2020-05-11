@@ -27,6 +27,12 @@ class Unet(tf.keras.Model):
     self.std = bool(std)
     self.feat = feat.lower() if(feat.lower() in ['vgg16','resnet'])else 'vgg16'
     self.src_chs = cfg['SRC_CHS']
+    self.f_layers_name = cfg['F_LAYER'][self.feat]
+    self.fc6 = None
+    self.fc6_cls = None
+    self.fc7 = None
+    self.fc7_cls = None
+    self.fc_chs = 512
   
   def build(self,input_shape):
     if(self.feat=='resnet'):
@@ -42,9 +48,10 @@ class Unet(tf.keras.Model):
 
     self.feature_model = tf.keras.Model(
       inputs=fnet.inputs,
-      outputs=[fnet.get_layer(o).output for o in cfg['F_LAYER'][self.feat]],
+      outputs=[fnet.get_layer(o).output for o in self.f_layers_name if(not(o in ['fc6','fc7']))],
       name=self.feat
     )
+
     self.max_scale_factor = cfg['F_MXS'][self.feat]
     f_layer_num = len(self.feature_model.outputs)
 
@@ -54,7 +61,6 @@ class Unet(tf.keras.Model):
         kernel_size=(1, 1),
         activation = cfg['SRC_ACT'],
         name="l{}_score_map".format(i),
-        padding="same",
       )
       for i in range(f_layer_num)]
 
@@ -63,11 +69,52 @@ class Unet(tf.keras.Model):
         filters = self.feature_model.outputs[i].shape[-1],
         kernel_size=(1, 1),
         activation=tf.nn.relu,
-        name="{}to{}_1x1_conv".format(i+1,i),
-        padding="same",
+        name="{}_to_{}_1x1_conv".format(i+1,i),
       )
       for i in range(f_layer_num-2,-1,-1)]
 
+    if('fc6' in self.f_layers_name):
+      self.fc6 = tf.keras.layers.Conv2D(filters = self.fc_chs, kernel_size=(1, 1), name='fc6')
+      self.scor_map_list.insert(0,
+        tf.keras.layers.Conv2D(
+          filters = self.src_chs,
+          kernel_size=(1, 1),
+          activation = cfg['SRC_ACT'],
+          name="fc6_score_map",
+        ))
+      self.rect_list.insert(0,tf.keras.layers.Conv2D(
+        filters = self.feature_model.outputs[-1].shape[-1],
+        kernel_size=(1, 1),
+        activation=tf.nn.relu,
+        name="fc6_to_{}_1x1_conv".format(f_layer_num-1),
+      ))
+    if('fc7' in self.f_layers_name):
+      if(not('fc6' in self.f_layers_name)):
+        self.fc6 = tf.keras.layers.Conv2D(filters = self.fc_chs, kernel_size=(1, 1), name='fc6')
+        self.rect_list.insert(0,tf.keras.layers.Conv2D(
+          filters = self.feature_model.outputs[-1].shape[-1],
+          kernel_size=(1, 1),
+          activation=tf.nn.relu,
+          name="fc6_to_{}_1x1_conv".format(f_layer_num-1),
+        ))
+        self.scor_map_list.insert(0,None)  
+
+      self.fc7 = tf.keras.layers.Conv2D(filters = self.fc_chs, kernel_size=(1, 1), name='fc7')
+      self.scor_map_list.insert(0,
+        tf.keras.layers.Conv2D(
+          filters = self.src_chs,
+          kernel_size=(1, 1),
+          activation = cfg['SRC_ACT'],
+          name="fc7_score_map",
+        ))
+      self.rect_list.insert(0,
+        tf.keras.layers.Conv2D(
+          filters = self.fc_chs,
+          kernel_size=(1, 1),
+          activation=tf.nn.relu,
+          name="fc7_to_fc6_1x1_conv",
+        )
+      )
     self.rect_list.append(tf.keras.layers.Conv2D(
       filters = cfg['F_FCHS'][self.feat],
       kernel_size=(1, 1),
@@ -100,12 +147,15 @@ class Unet(tf.keras.Model):
       [int(inputs.shape[-3]/self.max_scale_factor)*self.max_scale_factor,int(inputs.shape[-2]/self.max_scale_factor)*self.max_scale_factor])
     if(self.std):inputs = tf.image.per_image_standardization(inputs)
     ftlist = self.feature_model(inputs)
+    if(self.fc6):ftlist += [self.fc6(ftlist[-1])]
+    if(self.fc7):ftlist += [self.fc7(ftlist[-1])]
 
     ft = None
     scr = None
     for i in range(len(ftlist)):
-      if(scr!=None):scr = tf.math.add(tf.image.resize(scr,ftlist[-1-i].shape[-3:-1]),self.scor_map_list[i](ftlist[-1-i]))
-      else:scr = self.scor_map_list[i](ftlist[-1-i])
+      if(self.scor_map_list[i]):
+        if(scr!=None):scr = tf.math.add(tf.image.resize(scr,ftlist[-1-i].shape[-3:-1]),self.scor_map_list[i](ftlist[-1-i]))
+        else:scr = self.scor_map_list[i](ftlist[-1-i])
       if(ft!=None):ft = self.rect_list[i](tf.math.add(tf.image.resize(ft,ftlist[-1-i].shape[-3:-1]),ftlist[-1-i]))
       else:ft = self.rect_list[i](ftlist[-1-i])
 
@@ -175,7 +225,8 @@ class UnetLoss(tf.keras.losses.Loss):
     neg_num = min(int(pos_num*cfg['NP_RATE']),y_pred_scr[y_ture_mask==0].shape[0])
     neg_num = min(y_pred_scr[y_ture_mask==0].shape[0],cfg['PX_CLS_LOSS_MAX_NEG'])
     vals, _ = tf.math.top_k(y_pred_scr[y_ture_mask==0][:,0],k=neg_num) # negative
-    neg_slc = tf.cast(tf.math.logical_and(y_pred_scr[:,0]>=vals[-1],y_ture_mask==0),tf.float32)
+    vals = vals[-1] if(vals.shape[0])else tf.reduce_max(y_pred_scr[y_ture_mask==0][:,0])*0.1
+    neg_slc = tf.cast(tf.math.logical_and(y_pred_scr[:,0]>=vals,y_ture_mask==0),tf.float32)
     weight = neg_slc+float(cfg['PX_CLS_LOSS_W'])
     loss = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=y_pred_scr, labels=y_ture_mask)
     loss = tf.reduce_sum(weight*loss)/float(pos_num+neg_num)
@@ -247,4 +298,4 @@ class UnetLoss(tf.keras.losses.Loss):
       'box':bxloss,
       'score':scloss,
       }
-    return 0.1*mskloss + 0.1*bxloss + scloss
+    return scloss

@@ -44,7 +44,7 @@ class UnetTrainer(Trainer):
       tmp = tf.image.per_image_standardization(tmp)
       tf.summary.image(
         name="Feature image in step {}".format(step),
-        data=tmp,step=0,max_outputs=1)
+        data=tmp,step=0,max_outputs=50)
     return 0
 
   def batch_callback(self,batch_size,logger,time_usage):
@@ -79,18 +79,25 @@ class UnetTrainer(Trainer):
     if(tf.reduce_max(x_single)>1.0):x_single/=256.0
     x_single = tf.image.resize(x_single,mask.shape[-3:-1])
     if(boxs.shape[0]>0):x_single = draw_boxes(x_single,boxs,'cxywh')
+
+    scr = tf.where(y_pred['scr'][:,:,:,0]<y_pred['scr'][:,:,:,1], 1.0, 0.0)
+    scr = tf.cast(scr,tf.float32)
+    scr = tf.reshape(scr,scr.shape+[1])
+    scr = tf.broadcast_to(scr,scr.shape[:-1]+[3])
+
     tmp = tf.concat([x_single,
       # tf.broadcast_to(y_single,y_single.shape[:-1]+[3]),
       y_mask,
       # tf.broadcast_to(y_pred,y_pred.shape[:-1]+[3])],
-      mask
+      mask,
+      scr
       ],
       axis=-2)
 
     tf.summary.image(
-      name="Image|GT|Pred",
-      # name="Image|GT|Pred in step {}".format(step),
-      data=tmp,step=0,max_outputs=1)
+      # name="Image|GT|Edge Mask|Score Mask",
+      name="Image|GT|Pred in step {}".format(step),
+      data=tmp,step=0,max_outputs=50)
 
     
     return 0
