@@ -32,6 +32,7 @@ class Trainer():
       os.makedirs(self.logs_path)
     if(self.isdebug):
       self.file_writer = None
+      os.makedirs(os.path.join(self.logs_path,'debug'),exist_ok=True)
     else:
       self.file_writer = tf.summary.create_file_writer(self.logs_path)
       self.file_writer.set_as_default()
@@ -48,7 +49,8 @@ class Trainer():
     
   def log_txt(self,logstr):
     if(logstr and type(logstr)==str):
-      logger = open(os.path.join(self.logs_path,'result.txt'),'a+',encoding='utf8')
+      if(self.isdebug):logger = open(os.path.join(self.logs_path,'debug','result.txt'),'a+',encoding='utf8')
+      else:logger = open(os.path.join(self.logs_path,'result.txt'),'a+',encoding='utf8')
       logger.write(logstr)
 
   def log_image(self, tfimg, log_num=10, img_size=None, name=None):

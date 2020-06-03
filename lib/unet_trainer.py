@@ -17,16 +17,19 @@ class UnetTrainer(Trainer):
     task_name,isdebug,
     logs_path = LOGS_PATH,
     model_path = MODEL_PATH,
-    log_ft = False):
+    log_ft = False,
+    log_grad = True):
     Trainer.__init__(self,task_name=task_name,isdebug=isdebug,logs_path = logs_path,model_path = model_path,)
     self.cur_loss = 0
-    self.log_ft = log_ft
+    self.log_ft = bool(log_ft)
+    self.log_grad = bool(log_grad)
+    self.log_img_sec = ['ScoreMask','EdgeMask','GTMask','Image',]
 
   def train_action(self,x_single,y_single,step,logger):
     if(len(y_single['mask'].shape)==3):y_single['mask'] = tf.reshape(y_single['mask'],[1]+y_single['mask'].shape)
     if(y_single['mask'].dtype!=tf.float32 or y_single['mask'].dtype!=tf.float64):
       y_single['mask']=tf.cast(y_single['mask'],tf.float64)
-    with tf.GradientTape(persistent=True) as tape:
+    with tf.GradientTape(persistent=self.log_grad) as tape:
       tape.watch(self.model.trainable_variables)
       y_pred = self.model(x_single)
       loss_value = self.loss(y_single, y_pred)
@@ -45,6 +48,16 @@ class UnetTrainer(Trainer):
       tf.summary.image(
         name="Feature image in step {}".format(step),
         data=tmp,step=0,max_outputs=50)
+    
+    if(self.log_grad):
+      for o in self.loss.cur_loss:
+        auto_scalar(loss_value,step,"Loss")
+        tmp = tape.gradient(self.loss.cur_loss[o], self.model.trainable_variables)
+        for i in range(len(tmp)):
+          auto_scalar(
+            tf.reduce_sum(tmp[i]) if(tmp[i]!=None)else 0.0,
+            step,"Gradient: {} -> {}".format(o,self.model.trainable_variables[i].name))
+    
     return 0
 
   def batch_callback(self,batch_size,logger,time_usage):
@@ -84,21 +97,25 @@ class UnetTrainer(Trainer):
     scr = tf.cast(scr,tf.float32)
     scr = tf.reshape(scr,scr.shape+[1])
     scr = tf.broadcast_to(scr,scr.shape[:-1]+[3])
-
-    tmp = tf.concat([x_single,
-      # tf.broadcast_to(y_single,y_single.shape[:-1]+[3]),
-      y_mask,
-      # tf.broadcast_to(y_pred,y_pred.shape[:-1]+[3])],
-      mask,
-      scr
-      ],
-      axis=-2)
+    tmp = {
+      'Image': x_single,
+      'GTMask': y_mask,
+      'EdgeMask': mask,
+      'ScoreMask': scr,
+    }
+    tmp = tf.concat([tmp[o] for o in self.log_img_sec],axis=-2)
 
     tf.summary.image(
-      # name="Image|GT|Edge Mask|Score Mask",
-      name="Image|GT|Pred in step {}".format(step),
-      data=tmp,step=0,max_outputs=50)
+      name='|'.join(self.log_img_sec),
+      # name="{} in step {}".format('|'.join(self.log_img_sec),step),
+      data=tmp,step=step,max_outputs=50)
 
+    ft = tf.math.reduce_sum(self.model.ft,axis=-1,keepdims=True)
+    ft = tf.math.l2_normalize(ft,axis=-1)
+    if(tf.reduce_max(ft)>1.0):ft/=tf.reduce_max(ft)
+    tf.summary.image(
+      name="FT in step {}".format(step),
+      data=ft,step=step,max_outputs=50)
     
     return 0
 

@@ -14,7 +14,8 @@ cfg['LEARNING_RATE'] = 0.001
 ['vgg16', 'resnet']
 cfg['F_NET'] = 'vgg16'
 # choose whether to use pre trained network
-cfg['F_NET_PT'] = 'imagenet'
+# cfg['F_NET_PT'] = 'imagenet'
+cfg['F_NET_PT'] = None
 # choose feature layers
 # ['conv3_3', 'conv4_3', 'conv5_3', 'fc7']
 cfg['F_LAYER'] = {

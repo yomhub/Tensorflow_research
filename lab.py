@@ -198,6 +198,4 @@ def draw_dataset():
 if __name__ == "__main__":
   print(tf.__version__)
 
-  fnet = Unet()
-  tt = fnet(tf.zeros((1,720,1080,3)))
   print('end')

@@ -115,6 +115,7 @@ class Unet(tf.keras.Model):
           name="fc7_to_fc6_1x1_conv",
         )
       )
+    
     self.rect_list.append(tf.keras.layers.Conv2D(
       filters = cfg['F_FCHS'][self.feat],
       kernel_size=(1, 1),
@@ -153,7 +154,7 @@ class Unet(tf.keras.Model):
     ft = None
     scr = None
     for i in range(len(ftlist)):
-      if(self.scor_map_list[i]):
+      if(self.scor_map_list[i]!=None):
         if(scr!=None):scr = tf.math.add(tf.image.resize(scr,ftlist[-1-i].shape[-3:-1]),self.scor_map_list[i](ftlist[-1-i]))
         else:scr = self.scor_map_list[i](ftlist[-1-i])
       if(ft!=None):ft = self.rect_list[i](tf.math.add(tf.image.resize(ft,ftlist[-1-i].shape[-3:-1]),ftlist[-1-i]))
@@ -222,11 +223,14 @@ class UnetLoss(tf.keras.losses.Loss):
 
     pos_pix = tf.where(y_ture_mask==1)
     pos_num = int(pos_pix.shape[0])
-    neg_num = min(int(pos_num*cfg['NP_RATE']),y_pred_scr[y_ture_mask==0].shape[0])
-    neg_num = min(y_pred_scr[y_ture_mask==0].shape[0],cfg['PX_CLS_LOSS_MAX_NEG'])
+    neg_num = min(
+      int(pos_num*cfg['NP_RATE']),
+      y_pred_scr[y_ture_mask==0].shape[0],
+      cfg['PX_CLS_LOSS_MAX_NEG']
+      )
     vals, _ = tf.math.top_k(y_pred_scr[y_ture_mask==0][:,0],k=neg_num) # negative
-    vals = vals[-1] if(vals.shape[0])else tf.reduce_max(y_pred_scr[y_ture_mask==0][:,0])*0.1
-    neg_slc = tf.cast(tf.math.logical_and(y_pred_scr[:,0]>=vals,y_ture_mask==0),tf.float32)
+    neg_slc = tf.cast(tf.math.logical_and(y_pred_scr[:,0]>=vals[-1],y_ture_mask==0),tf.float32)
+    
     weight = neg_slc+float(cfg['PX_CLS_LOSS_W'])
     loss = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=y_pred_scr, labels=y_ture_mask)
     loss = tf.reduce_sum(weight*loss)/float(pos_num+neg_num)

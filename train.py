@@ -29,7 +29,7 @@ __DEF_TTT_DIR = os.path.join(__DEF_DATA_DIR,'totaltext')
 if __name__ == "__main__":
   parser = argparse.ArgumentParser(description='Choose settings.')
   parser.add_argument('--proposal', help='Choose proposal in nms and top_k.',default='top_k')
-  parser.add_argument('--opt', help='Choose optimizer in sgd and adam.',default='adam')
+  parser.add_argument('--opt', help='Choose optimizer.',default='sgd')
   parser.add_argument('--debug', help='Set --debug if want to debug.', action="store_true")
   parser.add_argument('--save', help='Set --save if want to save network.', action="store_true")
   parser.add_argument('--load', help='Set --load if want to load network.', action="store_true")
@@ -137,7 +137,7 @@ if __name__ == "__main__":
   else:
     islog=False
     trainer.set_trainer(model=model,loss=loss,opt=optimizer)
-    x_train, y_train = mydatalog.read_train_batch(args.step)
+    x_train, y_train = mydatalog.read_train_batch(1)
     for i in range(args.batch):
       # x_train, y_train = mydatalog.read_train_batch(args.step)
         
@@ -148,10 +148,10 @@ if __name__ == "__main__":
         # trainer.evaluate(x_val,y_val)
         trainer.evaluate(x_train, y_train)
 
-      if(((i+1)*args.step)%200==0):
-        lr*=0.9
-        trainer.set_trainer(opt=tf.keras.optimizers.Adam(learning_rate=lr))
-        trainer.log_txt("\n=======\nChange optimizer in step{}: {}, lr={}.\n=======\n".format((i+1)*args.step,'Adam',lr))
+      # if(((i+1)*args.step)%200==0):
+      #   lr*=0.9
+      #   trainer.set_trainer(opt=tf.keras.optimizers.Adam(learning_rate=lr))
+      #   trainer.log_txt("\n=======\nChange optimizer in step{}: {}, lr={}.\n=======\n".format((i+1)*args.step,'Adam',lr))
 
   if(ret==0 and args.save):
     trainer.set_trainer(data_count=mydatalog.train_conter)
