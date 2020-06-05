@@ -27,14 +27,17 @@ def txt_helper(fname,dtype=int,img_resize_coe=None):
   with open(fname,'r') as f:
     tmp = f.readlines()
     tmp = [o.split(', ') for o in tmp]
-    for l in tmp: 
-      xs = [dt(o) for o in l[0].split('[[')[-1].split(']]')[0].split()]
-      ys = [dt(o) for o in l[1].split('[[')[-1].split(']]')[0].split()]
-      if(img_resize_coe!=None):
-        boxs.append([dt(1), min(ys)*img_resize_coe[0], min(xs)*img_resize_coe[1],
-          max(ys)*img_resize_coe[0], max(xs)*img_resize_coe[1]])
-      else:
-        boxs.append([dt(1), min(ys), min(xs),max(ys), max(xs)])
+    try:
+      for l in tmp: 
+        xs = [dt(o) for o in l[0].split('[[')[-1].split(']]')[0].split()]
+        ys = [dt(o) for o in l[1].split('[[')[-1].split(']]')[0].split()]
+        if(img_resize_coe!=None):
+          boxs.append([dt(1), min(ys)*img_resize_coe[0], min(xs)*img_resize_coe[1],
+            max(ys)*img_resize_coe[0], max(xs)*img_resize_coe[1]])
+        else:
+          boxs.append([dt(1), min(ys), min(xs),max(ys), max(xs)])
+    except:
+      raise RuntimeError('Read err at {} \nin {}\nin {}'.format(fname,tmp,l))
   return tf.convert_to_tensor(boxs)
 
 class TTText():

@@ -11,11 +11,9 @@ cfg = {}
 cfg['LEARNING_RATE'] = 0.001
 
 # choose feature network
-['vgg16', 'resnet']
-cfg['F_NET'] = 'vgg16'
+cfg['F_NET'] = ['vgg16', 'resnet'][0]
 # choose whether to use pre trained network
-# cfg['F_NET_PT'] = 'imagenet'
-cfg['F_NET_PT'] = None
+cfg['F_NET_PT'] = [None,'imagenet'][1]
 # choose feature layers
 # ['conv3_3', 'conv4_3', 'conv5_3', 'fc7']
 cfg['F_LAYER'] = {
@@ -56,11 +54,30 @@ cfg['SRC_ACT'] = None
 # score map channels num
 cfg['SRC_CHS'] = 2
 
-
+# ========== mask loss ==========
 # negative / postive sample ratio
-cfg['NP_RATE'] = 2/1
+cfg['MSK_LOSS_NP_RATE'] = 2/1
+# global pixel class loss weight
+cfg['MSK_LOSS_GLO_W'] = 0.1
+# negtive pixels class loss weight
+cfg['MSK_LOSS_NG_W'] = 0.25
+# positive pixels class loss weight
+cfg['MSK_LOSS_PS_W'] = 0.25
+# ========== end mask loss ==========
 
-# pixel class loss weight
-cfg['PX_CLS_LOSS_W'] = 0.0
+
+# ========== class loss ==========
+# negative / postive sample ratio
+cfg['PX_CLS_LOSS_NP_RATE'] = 2/1
 # maxium negative pixel num
 cfg['PX_CLS_LOSS_MAX_NEG'] = 10000
+# global pixel class loss weight
+cfg['PX_CLS_LOSS_GLO_W'] = 0.1
+# negtive pixels class loss weight
+cfg['PX_CLS_LOSS_NG_W'] = 0.25
+# positive pixels class loss weight
+cfg['PX_CLS_LOSS_PS_W'] = 0.25
+# ========== end class loss ==========
+
+# final loss function
+cfg['FIN_LOSS_FUN'] = lambda box,msk,src:1.0*box + 0.1*msk + 0.1*src

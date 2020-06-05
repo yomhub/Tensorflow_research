@@ -9,6 +9,7 @@ mydataset
 mydataset.lnk
 dataset
 dataset.lnk
+*.log
 *.out
 *.txt
 *.jetson

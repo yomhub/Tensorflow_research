@@ -2,6 +2,7 @@ import os, sys
 import tensorflow as tf
 import numpy as np
 import argparse
+from tqdm import tqdm, trange
 from datetime import datetime
 from lib.dataloader.ctw import CTW
 from lib.dataloader.svt import SVT
@@ -15,35 +16,39 @@ from lib.label_rcnn_trainer import LRCNNTrainer
 from lib.unet_trainer import UnetTrainer
 from lib.tflib.evaluate_tools import draw_boxes
 from lib.tflib.log_tools import save_image
-
-__DEF_INDEX = 0
-__DEF_IMG_SIZE = [[1280,720],[int(1280/2),int(720/2)],[640,640]]
+from lib.config.train_default import cfg as tcfg
 
 __DEF_LOCAL_DIR = os.path.split(__file__)[0]
 __DEF_DATA_DIR = os.path.join(__DEF_LOCAL_DIR,'mydataset')
 __DEF_CTW_DIR = os.path.join(__DEF_DATA_DIR,'ctw')
 __DEF_SVT_DIR = os.path.join(__DEF_DATA_DIR,'svt')
 __DEF_TTT_DIR = os.path.join(__DEF_DATA_DIR,'totaltext')
+# sys.stderr = open('err.log','w')
 
+def get_opt(oname,lr):
+  if(oname=='sgd'):
+    return tf.keras.optimizers.SGD(learning_rate=lr,momentum=tcfg['MMT'])
+  else:
+    return tf.keras.optimizers.Adam(learning_rate=lr)
 
 if __name__ == "__main__":
   parser = argparse.ArgumentParser(description='Choose settings.')
   parser.add_argument('--proposal', help='Choose proposal in nms and top_k.',default='top_k')
-  parser.add_argument('--opt', help='Choose optimizer.',default='sgd')
+  parser.add_argument('--opt', help='Choose optimizer.',default=tcfg['OPT'])
   parser.add_argument('--debug', help='Set --debug if want to debug.', action="store_true")
   parser.add_argument('--save', help='Set --save if want to save network.', action="store_true")
   parser.add_argument('--load', help='Set --load if want to load network.', action="store_true")
   parser.add_argument('--net', help='Choose noework (frcnn/lrcnn/unet).', default="unet")
   parser.add_argument('--name', help='Name of task.')
-  parser.add_argument('--dataset', help='Choose dataset: ctw/svt/ttt.', default="ttt")
-  parser.add_argument('--datax', type=int, help='Dataset output width.',default=__DEF_IMG_SIZE[__DEF_INDEX][0])
-  parser.add_argument('--datay', type=int, help='Dataset output height.',default=__DEF_IMG_SIZE[__DEF_INDEX][1])
-  parser.add_argument('--step', type=int, help='Step size.',default=5)
-  parser.add_argument('--batch', type=int, help='Batch size.',default=50)
-  parser.add_argument('--logstp', type=int, help='Log step size.',default=10)
+  parser.add_argument('--dataset', help='Choose dataset: ctw/svt/ttt.', default=tcfg['DATASET'])
+  parser.add_argument('--datax', type=int, help='Dataset output width.',default=tcfg['IMG_SIZE'][0])
+  parser.add_argument('--datay', type=int, help='Dataset output height.',default=tcfg['IMG_SIZE'][1])
+  parser.add_argument('--step', type=int, help='Step size.',default=tcfg['STEP'])
+  parser.add_argument('--batch', type=int, help='Batch size.',default=tcfg['BATCH'])
+  parser.add_argument('--logstp', type=int, help='Log step size.',default=tcfg['LOGSTP'])
   parser.add_argument('--cross', help='Set --cross if want to cross box loss.', action="store_true")
   # parser.add_argument('--savestep', type=int, help='Batch size.',default=20)
-  parser.add_argument('--learnrate', type=float, help='Learning rate.',default=0.001)
+  parser.add_argument('--learnrate', type=float, help='Learning rate.',default=tcfg['LR'])
   args = parser.parse_args()
   time_start = datetime.now()
   isdebug = args.debug
@@ -62,13 +67,7 @@ if __name__ == "__main__":
     "\t Load network: {}.\n".format('Yes' if(args.load)else 'No')
   print(summarize)
   
-  # opt_schedule = np.array([0.6,0.8])*args.batch
-  # opt_schedule = opt_schedule.astype(np.int)
-  # opt_names = ['sgd']
-  if(args.opt.lower()=='sgd'):
-    optimizer = tf.keras.optimizers.SGD(learning_rate=lr)
-  else:
-    optimizer = tf.keras.optimizers.Adam(learning_rate=lr)
+  optimizer = get_opt(args.opt.lower(),lr)
 
   if(args.dataset.lower()=='svt'):
     mydatalog = SVT(__DEF_SVT_DIR,out_size=[args.datay,args.datax])
@@ -137,21 +136,21 @@ if __name__ == "__main__":
   else:
     islog=False
     trainer.set_trainer(model=model,loss=loss,opt=optimizer)
-    x_train, y_train = mydatalog.read_train_batch(1)
-    for i in range(args.batch):
-      # x_train, y_train = mydatalog.read_train_batch(args.step)
+    # x_train, y_train = mydatalog.read_train_batch(1)
+    for i in trange(args.step):
+      x_train, y_train = mydatalog.read_train_batch(args.batch)
         
       ret = trainer.fit(x_train,y_train)
       if(ret==-1):break
-      if(((i+1)*args.step)%args.logstp==0):
+      if(i%args.logstp==0):
         x_val, y_val = mydatalog.read_test_batch(2)
-        # trainer.evaluate(x_val,y_val)
+        trainer.evaluate(x_val,y_val)
         trainer.evaluate(x_train, y_train)
 
-      # if(((i+1)*args.step)%200==0):
-      #   lr*=0.9
-      #   trainer.set_trainer(opt=tf.keras.optimizers.Adam(learning_rate=lr))
-      #   trainer.log_txt("\n=======\nChange optimizer in step{}: {}, lr={}.\n=======\n".format((i+1)*args.step,'Adam',lr))
+      if(i and 'LR_DEC_STP' in tcfg and tcfg['LR_DEC_STP']!=0 and i%tcfg['LR_DEC_STP']==0):
+        lr*=(1.0-tcfg['LR_DEC_RT'])
+        trainer.set_trainer(opt=get_opt(args.opt.lower(),lr))
+        trainer.log_txt("\n=======\nChange optimizer in step{}: {}, lr={}.\n=======\n".format((i+1)*args.batch,args.opt.lower(),lr))
 
   if(ret==0 and args.save):
     trainer.set_trainer(data_count=mydatalog.train_conter)

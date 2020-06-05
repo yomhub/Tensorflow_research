@@ -17,7 +17,7 @@ class UnetTrainer(Trainer):
     task_name,isdebug,
     logs_path = LOGS_PATH,
     model_path = MODEL_PATH,
-    log_ft = False,
+    log_ft = True,
     log_grad = True):
     Trainer.__init__(self,task_name=task_name,isdebug=isdebug,logs_path = logs_path,model_path = model_path,)
     self.cur_loss = 0
@@ -37,33 +37,33 @@ class UnetTrainer(Trainer):
     self.cur_loss += loss_value
     grads = tape.gradient(loss_value, self.model.trainable_variables)
     self.opt.apply_gradients(zip(grads, self.model.trainable_variables))
-    auto_scalar(loss_value,step,"Loss")
-    auto_scalar(self.loss.cur_loss['mask'],step,"Mask loss")
-    auto_scalar(self.loss.cur_loss['box'],step,"Box loss")
-    auto_scalar(self.loss.cur_loss['score'],step,"Score loss")
+    auto_scalar(loss_value,step,"Loss/Loss")
+    auto_scalar(self.loss.cur_loss['mask'],step,"Loss/Mask loss")
+    auto_scalar(self.loss.cur_loss['box'],step,"Loss/Box loss")
+    auto_scalar(self.loss.cur_loss['score'],step,"Loss/Score loss")
     
     if(self.log_ft):
-      tmp = tf.reduce_sum(self.model.ft,axis=-1,keepdims=True)
-      tmp = tf.image.per_image_standardization(tmp)
+      auto_scalar(tf.reduce_mean(self.model.ft),step,"FT/ft mean")
+      tmp = tf.reduce_mean(self.model.ft,axis=-1,keepdims=True)
+      tmp = tf.math.l2_normalize(tmp,axis=(-1,-2,-3))
       tf.summary.image(
-        name="Feature image in step {}".format(step),
-        data=tmp,step=0,max_outputs=50)
+        name="Feature image",
+        data=tmp,step=step,max_outputs=50)
     
     if(self.log_grad):
       for o in self.loss.cur_loss:
-        auto_scalar(loss_value,step,"Loss")
         tmp = tape.gradient(self.loss.cur_loss[o], self.model.trainable_variables)
         for i in range(len(tmp)):
           auto_scalar(
-            tf.reduce_sum(tmp[i]) if(tmp[i]!=None)else 0.0,
-            step,"Gradient: {} -> {}".format(o,self.model.trainable_variables[i].name))
+            tf.reduce_mean(tmp[i]) if(tmp[i]!=None)else 0.0,
+            step,"Gradient {}/{}".format(o,self.model.trainable_variables[i].name))
     
     return 0
 
   def batch_callback(self,batch_size,logger,time_usage):
     self.cur_loss /= batch_size
     logger.write("======================================\n")
-    logger.write("Batch {}, size {}.\n".format(self.batch+1,batch_size))
+    logger.write("Step {}, size {}.\n".format(self.batch+1,batch_size))
     logger.write("Avg Loss: {}.\n".format(self.cur_loss))
     logger.write("Time usage: {} Day {} Second.\n".format(time_usage.days,time_usage.seconds))
     logger.write("======================================\n\n")
@@ -77,7 +77,7 @@ class UnetTrainer(Trainer):
 
     y_pred = self.model(x_single)
     mask = y_pred['mask']
-    if(tf.reduce_max(mask)>1.0):mask/=256.0
+    mask = tf.math.l2_normalize(mask,axis=(-1,-2,-3))
     mask = tf.broadcast_to(mask,mask.shape[:-1]+[3])
     y_mask = y_single['mask']
     y_mask = tf.image.resize(y_mask,mask.shape[-3:-1],'nearest')
@@ -103,19 +103,19 @@ class UnetTrainer(Trainer):
       'EdgeMask': mask,
       'ScoreMask': scr,
     }
-    tmp = tf.concat([tmp[o] for o in self.log_img_sec],axis=-2)
+    tmp = tf.concat([tmp[o] for o in self.log_img_sec if o in tmp],axis=-2)
 
     tf.summary.image(
       name='|'.join(self.log_img_sec),
       # name="{} in step {}".format('|'.join(self.log_img_sec),step),
       data=tmp,step=step,max_outputs=50)
 
-    ft = tf.math.reduce_sum(self.model.ft,axis=-1,keepdims=True)
-    ft = tf.math.l2_normalize(ft,axis=-1)
-    if(tf.reduce_max(ft)>1.0):ft/=tf.reduce_max(ft)
-    tf.summary.image(
-      name="FT in step {}".format(step),
-      data=ft,step=step,max_outputs=50)
+    # ft = tf.math.reduce_mean(self.model.ft,axis=-1,keepdims=True)
+    # ft = tf.math.l2_normalize(ft,axis=-1)
+    # if(tf.reduce_max(ft)>1.0):ft/=tf.reduce_max(ft)
+    # tf.summary.image(
+    #   name="FT",
+    #   data=ft,step=step,max_outputs=50)
     
     return 0
 

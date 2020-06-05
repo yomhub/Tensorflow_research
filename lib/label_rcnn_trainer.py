@@ -60,7 +60,7 @@ class LRCNNTrainer(Trainer):
   def batch_callback(self,batch_size,logger,time_usage):
     self.cur_loss /= batch_size
     logger.write("======================================\n")
-    logger.write("Batch {}, size {}.\n".format(self.batch+1,batch_size))
+    logger.write("Step {}, size {}.\n".format(self.batch+1,batch_size))
     logger.write("Avg Loss: {}.\n".format(self.cur_loss))
     logger.write("Time usage: {} Day {} Second.\n".format(time_usage.days,time_usage.seconds))
     logger.write("======================================\n\n")

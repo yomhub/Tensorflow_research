@@ -101,7 +101,7 @@ class FRCNNTrainer(Trainer):
     self.cur_gtbox_num /= batch_size
 
     logger.write("======================================\n")
-    logger.write("Batch {}, size {}.\n".format(self.batch+1,batch_size))
+    logger.write("Step {}, size {}.\n".format(self.batch+1,batch_size))
     logger.write("Avg Loss: {}.\n".format(self.cur_loss))
     logger.write("Avg cur_rpn_cross_entropy = {}.\n".format(self.cur_rpn_cross_entropy))
     logger.write("Avg cur_rpn_loss_box = {}.\n".format(self.cur_rpn_loss_box))
