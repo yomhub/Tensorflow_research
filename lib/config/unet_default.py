@@ -80,4 +80,4 @@ cfg['PX_CLS_LOSS_PS_W'] = 0.25
 # ========== end class loss ==========
 
 # final loss function
-cfg['FIN_LOSS_FUN'] = lambda box,msk,src:1.0*box + 0.1*msk + 0.1*src
+cfg['FIN_LOSS_FUN'] = lambda box,msk,src:0.7*box + 0.1*msk + 1.0*src
