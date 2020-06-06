@@ -157,7 +157,8 @@ class Unet(tf.keras.Model):
       if(self.scor_map_list[i]!=None):
         if(scr!=None):scr = tf.math.add(tf.image.resize(scr,ftlist[-1-i].shape[-3:-1]),self.scor_map_list[i](ftlist[-1-i]))
         else:scr = self.scor_map_list[i](ftlist[-1-i])
-      if(ft!=None):ft = self.rect_list[i](tf.math.add(tf.image.resize(ft,ftlist[-1-i].shape[-3:-1]),ftlist[-1-i]))
+      # if(ft!=None):ft = self.rect_list[i](tf.math.add(tf.image.resize(ft,ftlist[-1-i].shape[-3:-1]),ftlist[-1-i]))
+      if(ft!=None):ft = self.rect_list[i](tf.concat([tf.image.resize(ft,ftlist[-1-i].shape[-3:-1]),ftlist[-1-i]],axis=-1))
       else:ft = self.rect_list[i](ftlist[-1-i])
 
     mask = self.map_conv(ft)
