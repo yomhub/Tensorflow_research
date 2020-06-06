@@ -92,6 +92,10 @@ class UnetTrainer(Trainer):
     if(tf.reduce_max(x_single)>1.0):x_single/=256.0
     x_single = tf.image.resize(x_single,mask.shape[-3:-1])
     if(boxs.shape[0]>0):x_single = draw_boxes(x_single,boxs,'cxywh')
+    else:
+      gt_boxs = y_pred['gt'][y_mask[:,:,:,0]>0.0]
+      gt_boxs = tf.reshape(gt_boxs,[-1,gt_boxs.shape[-1]])
+      x_single = draw_boxes(x_single,gt_boxs,'cxywh')
 
     scr = tf.where(y_pred['scr'][:,:,:,0]<y_pred['scr'][:,:,:,1], 1.0, 0.0)
     scr = tf.cast(scr,tf.float32)

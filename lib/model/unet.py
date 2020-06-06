@@ -201,11 +201,29 @@ class UnetLoss(tf.keras.losses.Loss):
       c=0.0
       for i in range(gtbox.shape[0]):
         if(gtbox[i][-1]<=0 or gtbox[i][-2]<=0):continue
-        s_yt = tf.image.crop_to_bounding_box(y_ture_mask,gtbox[i][-3],gtbox[i][-4],gtbox[i][-1],gtbox[i][-2])
-        s_yp = tf.image.crop_to_bounding_box(y_pred,gtbox[i][-3],gtbox[i][-4],gtbox[i][-1],gtbox[i][-2])
-        s_yt = tf.reshape(tf.cast(s_yt,tf.float32),[-1])
-        s_yp = tf.reshape(tf.cast(s_yp,tf.float32),[-1])
+        try:
+          s_yt = tf.image.crop_to_bounding_box(y_ture_mask,gtbox[i][-3],gtbox[i][-4],gtbox[i][-1],gtbox[i][-2])
+          s_yp = tf.image.crop_to_bounding_box(y_pred,gtbox[i][-3],gtbox[i][-4],gtbox[i][-1],gtbox[i][-2])
+          s_yt = tf.reshape(tf.cast(s_yt,tf.float32),[-1])
+          s_yp = tf.reshape(tf.cast(s_yp,tf.float32),[-1])
 
+          pos_num = tf.where(s_yt>0).shape[0]
+          neg_num = min(int(cfg['MSK_LOSS_NP_RATE']*pos_num),int(s_yt.shape[0]-pos_num))
+          vals, _ = tf.math.top_k(s_yp[s_yt==0],k=neg_num)
+          pos_slc = tf.cast(s_yt>0,tf.float32)
+          if(vals.shape[0]>0):
+            neg_slc = tf.cast(tf.math.logical_and(s_yp>=vals[-1],s_yt==0.0),tf.float32)
+          else:
+            neg_slc = np.zeros_like(pos_slc)
+          loss += tf.reduce_mean(tf.abs(s_yt-s_yp)*(cfg['MSK_LOSS_GLO_W']+cfg['MSK_LOSS_NG_W']*neg_slc+cfg['MSK_LOSS_PS_W']*pos_slc))
+          # loss += 1.0 - 2.0*tf.math.reduce_sum(s_yt*s_yp)/tf.math.reduce_sum(s_yt*s_yt+s_yp*s_yp)
+          c+=1.0
+        except:
+          continue
+      if(c>0.0):loss /= c
+      else:
+        s_yt = tf.reshape(tf.cast(y_ture_mask,tf.float32),[-1])
+        s_yp = tf.reshape(tf.cast(y_pred,tf.float32),[-1])
         pos_num = tf.where(s_yt>0).shape[0]
         neg_num = min(int(cfg['MSK_LOSS_NP_RATE']*pos_num),int(s_yt.shape[0]-pos_num))
         vals, _ = tf.math.top_k(s_yp[s_yt==0],k=neg_num)
@@ -214,10 +232,7 @@ class UnetLoss(tf.keras.losses.Loss):
           neg_slc = tf.cast(tf.math.logical_and(s_yp>=vals[-1],s_yt==0.0),tf.float32)
         else:
           neg_slc = np.zeros_like(pos_slc)
-        loss += tf.reduce_mean(tf.abs(s_yt-s_yp)*(cfg['MSK_LOSS_GLO_W']+cfg['MSK_LOSS_NG_W']*neg_slc+cfg['MSK_LOSS_PS_W']*pos_slc))
-        # loss += 1.0 - 2.0*tf.math.reduce_sum(s_yt*s_yp)/tf.math.reduce_sum(s_yt*s_yt+s_yp*s_yp)
-        c+=1.0
-      loss /= c
+        loss = tf.reduce_mean(tf.abs(s_yt-s_yp)*(cfg['MSK_LOSS_GLO_W']+cfg['MSK_LOSS_NG_W']*neg_slc+cfg['MSK_LOSS_PS_W']*pos_slc))
     else:
       y_ture_mask = tf.cast(y_ture_mask,y_pred.dtype)
       loss += 1.0 - 2.0*tf.math.reduce_sum(y_ture_mask*y_pred)/tf.math.reduce_sum(y_ture_mask*y_ture_mask+y_pred*y_pred)
