@@ -850,8 +850,9 @@ def gen_gt_from_msk(gt_mask,tar_size,recf_size,num_class,lb_thr=0.2):
 
   return gt_mask
 
-# def sub_msk_gen():
-#   """
-#     Extract sub image.
-#     PS: we can't use tf.image.extract_patches because of misaligned coordinate
-#   """
+@tf.function
+def yxyx2area(boxes):
+  """
+  Return areas for boses
+  """
+  return (boxes[:,2]-boxes[:,0])*(boxes[:,3]-boxes[:,1])

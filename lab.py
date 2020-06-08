@@ -198,13 +198,9 @@ def draw_dataset():
 if __name__ == "__main__":
   print(tf.__version__)
   sv_dir = os.path.join(__DEF_LOCAL_DIR,'save_model','unet','model')
-  m1 = Unet()
-  m1(tf.zeros((1,200,200,3)))
-  m1(tf.zeros((1,300,300,3)))
-  m1.save_weights(sv_dir)
 
   m2 = Unet(std=False)
   m2.load_weights(sv_dir)
-  m2(tf.zeros((1,200,200,3)))
-  m2(tf.zeros((1,300,300,3)))
+
+
   print('end')

@@ -120,3 +120,42 @@ def rf_helper(net_list,ord_len,panding=True):
       stp+=strsize
     cod_table.append(tmp)
   return rf_st,cod_table
+
+def visualize_helper(img,gtbox,mask,model):
+  """
+    Helper for feature part in unet.
+    Args:
+      img: input image
+      gtbox: (N,4) with [y1,x1,y2,x2] in [0,1]
+      mask: pixel mask
+      module: model with output 
+      {}
+  """
+  scale_num = 10
+  min_thr = 1/20
+  max_thr = 1/3
+  areas = (gtbox[:,-2]-gtbox[:,-4])*(gtbox[:,-1]-gtbox[:,-3])
+  min_h = tf.reduce_min(gtbox[:,-2]-gtbox[:,-4])
+  min_w = tf.reduce_min(gtbox[:,-1]-gtbox[:,-3])
+  max_h = tf.reduce_max(gtbox[:,-2]-gtbox[:,-4])
+  max_w = tf.reduce_max(gtbox[:,-1]-gtbox[:,-3])
+  if(tf.reduce_max(gtbox)>1.0):
+    min_h/=img.shape[-3]
+    max_h/=img.shape[-3]
+    min_w/=img.shape[-2]
+    max_w/=img.shape[-2]
+
+  size_list = np.linspace(min_h,1.0-max_h,scale_num).reshape((-1,1))*img.shape[-3:-1]
+
+  for i in range(len(size_list)):
+    
+    rt = model(tf.image.resize(img,size_list[i]))
+    mp = tf.cast(rt['scr'][:,:,:,1]>rt['scr'][:,:,:,0],tf.float32)
+    tf.summary.image(
+      name = 'Score in image size {}.'.format(size_list[i]),
+      data = tf.broadcast_to(mp,mp.shape[:-1]+[3]))
+
+    for o in range(len(rt['ftlist'])):
+      tf.summary.scalar('Min ft: image size {}.'.format(size_list[i]),tf.reduce_min(rt['ftlist']),step=o)
+      tf.summary.scalar('Max ft: image size {}.'.format(size_list[i]),tf.reduce_max(rt['ftlist']),step=o)
+      tf.summary.scalar('Mean ft: image size {}.'.format(size_list[i]),tf.reduce_mean(rt['ftlist']),step=o)
