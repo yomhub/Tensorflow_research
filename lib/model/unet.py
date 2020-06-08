@@ -204,7 +204,8 @@ class UnetLoss(tf.keras.losses.Loss):
   
   def mask_loss(self, y_ture_mask, y_pred, gtbox):
     # y_ture_mask = tf.norm(tf.image.sobel_edges(y_ture_mask),axis=-1)
-    y_ture_mask = tf.math.l2_normalize(y_ture_mask,axis=(-1,-2,-3))
+    # y_ture_mask = tf.math.l2_normalize(y_ture_mask,axis=(-1,-2,-3))
+    y_ture_mask /= tf.reduce_max(y_ture_mask)
     gtbox = map2coordinate(gtbox,[1.0,1.0],y_pred.shape[-3:-1])
     gtbox = tf.cast(yxyx2xywh(gtbox,center=False),tf.int32)
     loss = 0.0
