@@ -145,17 +145,23 @@ def visualize_helper(img,gtbox,mask,model):
     min_w/=img.shape[-2]
     max_w/=img.shape[-2]
 
-  size_list = np.linspace(min_h,1.0-max_h,scale_num).reshape((-1,1))*img.shape[-3:-1]
-
+  # size_list = np.linspace(min_h,1.0-max_h,scale_num).reshape((-1,1))*img.shape[-3:-1]
+  coe_x = int(img.shape[-2]/32)
+  coe_y = int(img.shape[-3]/32)
+  size_list = np.asarray(range(1,min(coe_x,coe_y),1)).reshape((-1,1))*[32,32]
+  # size_list = np.linspace(1,coe_x,scale_num).reshape((-1,1))*[32,32]
   for i in range(len(size_list)):
-    
-    rt = model(tf.image.resize(img,size_list[i]))
+    tmp = tf.image.resize(img,size_list[i])
+    rt = model(tmp)
     mp = tf.cast(rt['scr'][:,:,:,1]>rt['scr'][:,:,:,0],tf.float32)
+    mp = tf.reshape(mp,mp.shape+[1])
+    mp = tf.broadcast_to(mp,mp.shape[:-1]+[3])
+    mp = tf.concat([mp,tf.image.resize(tmp,mp.shape[-3:-1])/255.0],axis=2)
     tf.summary.image(
-      name = 'Score in image size {}.'.format(size_list[i]),
-      data = tf.broadcast_to(mp,mp.shape[:-1]+[3]))
+      name = 'Score|Img image size {}.'.format(size_list[i]),
+      data = mp,step=0)
 
     for o in range(len(rt['ftlist'])):
-      tf.summary.scalar('Min ft: image size {}.'.format(size_list[i]),tf.reduce_min(rt['ftlist']),step=o)
-      tf.summary.scalar('Max ft: image size {}.'.format(size_list[i]),tf.reduce_max(rt['ftlist']),step=o)
-      tf.summary.scalar('Mean ft: image size {}.'.format(size_list[i]),tf.reduce_mean(rt['ftlist']),step=o)
+      tf.summary.scalar('Min/image size {}.'.format(size_list[i]),tf.reduce_min(rt['ftlist'][o]),step=o)
+      tf.summary.scalar('Max/image size {}.'.format(size_list[i]),tf.reduce_max(rt['ftlist'][o]),step=o)
+      tf.summary.scalar('Mean/image size {}.'.format(size_list[i]),tf.reduce_mean(rt['ftlist'][o]),step=o)
