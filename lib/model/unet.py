@@ -24,6 +24,7 @@ class Unet(tf.keras.Model):
   """
   def __init__(self,std=True,feat=cfg['F_NET']):
     super(Unet, self).__init__()
+
     self.std = bool(std)
     self.feat = feat.lower() if(feat.lower() in ['vgg16','resnet'])else 'vgg16'
     self.src_chs = cfg['SRC_CHS']
@@ -33,6 +34,8 @@ class Unet(tf.keras.Model):
     self.fc7 = None
     self.fc7_cls = None
     self.fc_chs = 512
+    self.scor_map_dict = {} # name 'l{}_score_map'
+    self.rect_dict = {} # name 'l{}_rect'
   
   def build(self,input_shape):
     if(self.feat=='resnet'):
@@ -55,7 +58,7 @@ class Unet(tf.keras.Model):
     self.max_scale_factor = cfg['F_MXS'][self.feat]
     f_layer_num = len(self.feature_model.outputs)
 
-    self.scor_map_list = [
+    scor_map_list = [
       tf.keras.layers.Conv2D(
         filters = self.src_chs,
         kernel_size=(1, 1),
@@ -64,7 +67,7 @@ class Unet(tf.keras.Model):
       )
       for i in range(f_layer_num)]
 
-    self.rect_list = [
+    rect_list = [
       tf.keras.layers.Conv2D(
         filters = self.feature_model.outputs[i].shape[-1],
         kernel_size=(1, 1),
@@ -75,14 +78,14 @@ class Unet(tf.keras.Model):
 
     if('fc6' in self.f_layers_name):
       self.fc6 = tf.keras.layers.Conv2D(filters = self.fc_chs, kernel_size=(1, 1), name='fc6')
-      self.scor_map_list.insert(0,
+      scor_map_list.insert(0,
         tf.keras.layers.Conv2D(
           filters = self.src_chs,
           kernel_size=(1, 1),
           activation = cfg['SRC_ACT'],
           name="fc6_score_map",
         ))
-      self.rect_list.insert(0,tf.keras.layers.Conv2D(
+      rect_list.insert(0,tf.keras.layers.Conv2D(
         filters = self.feature_model.outputs[-1].shape[-1],
         kernel_size=(1, 1),
         activation=tf.nn.relu,
@@ -91,23 +94,23 @@ class Unet(tf.keras.Model):
     if('fc7' in self.f_layers_name):
       if(not('fc6' in self.f_layers_name)):
         self.fc6 = tf.keras.layers.Conv2D(filters = self.fc_chs, kernel_size=(1, 1), name='fc6')
-        self.rect_list.insert(0,tf.keras.layers.Conv2D(
+        rect_list.insert(0,tf.keras.layers.Conv2D(
           filters = self.feature_model.outputs[-1].shape[-1],
           kernel_size=(1, 1),
           activation=tf.nn.relu,
           name="fc6_to_{}_1x1_conv".format(f_layer_num-1),
         ))
-        self.scor_map_list.insert(0,None)  
+        scor_map_list.insert(0,None)  
 
       self.fc7 = tf.keras.layers.Conv2D(filters = self.fc_chs, kernel_size=(1, 1), name='fc7')
-      self.scor_map_list.insert(0,
+      scor_map_list.insert(0,
         tf.keras.layers.Conv2D(
           filters = self.src_chs,
           kernel_size=(1, 1),
           activation = cfg['SRC_ACT'],
           name="fc7_score_map",
         ))
-      self.rect_list.insert(0,
+      rect_list.insert(0,
         tf.keras.layers.Conv2D(
           filters = self.fc_chs,
           kernel_size=(1, 1),
@@ -116,13 +119,19 @@ class Unet(tf.keras.Model):
         )
       )
     
-    self.rect_list.append(tf.keras.layers.Conv2D(
+    rect_list.append(tf.keras.layers.Conv2D(
       filters = cfg['F_FCHS'][self.feat],
       kernel_size=(1, 1),
       activation=tf.nn.relu,
       name="fin_1x1_conv",
       padding="same",
     ))
+
+    # can't save list obj in tf 2.1 so convert to dictionry
+    for i in range(len(rect_list)):
+      self.rect_dict["l{}_rect".format(i)] = rect_list[i]
+    for i in range(len(scor_map_list)):
+      self.scor_map_dict["l{}_score_map".format(i)] = scor_map_list[i]
 
     self.map_conv = tf.keras.layers.Conv2D(
       filters = 1, # predict the value of map because sobel filter is float
@@ -154,12 +163,14 @@ class Unet(tf.keras.Model):
     ft = None
     scr = None
     for i in range(len(ftlist)):
-      if(self.scor_map_list[i]!=None):
-        if(scr!=None):scr = tf.math.add(tf.image.resize(scr,ftlist[-1-i].shape[-3:-1]),self.scor_map_list[i](ftlist[-1-i]))
-        else:scr = self.scor_map_list[i](ftlist[-1-i])
+      # score map up batch
+      if(self.scor_map_dict["l{}_score_map".format(i)]!=None):
+        if(scr!=None):scr = tf.math.add(tf.image.resize(scr,ftlist[-1-i].shape[-3:-1]),self.scor_map_dict["l{}_score_map".format(i)](ftlist[-1-i]))
+        else:scr = self.scor_map_dict["l{}_score_map".format(i)](ftlist[-1-i])
+      # feature up batch
       # if(ft!=None):ft = self.rect_list[i](tf.math.add(tf.image.resize(ft,ftlist[-1-i].shape[-3:-1]),ftlist[-1-i]))
-      if(ft!=None):ft = self.rect_list[i](tf.concat([tf.image.resize(ft,ftlist[-1-i].shape[-3:-1]),ftlist[-1-i]],axis=-1))
-      else:ft = self.rect_list[i](ftlist[-1-i])
+      if(ft!=None):ft = self.rect_dict["l{}_rect".format(i)](tf.concat([tf.image.resize(ft,ftlist[-1-i].shape[-3:-1]),ftlist[-1-i]],axis=-1))
+      else:ft = self.rect_dict["l{}_rect".format(i)](ftlist[-1-i])
 
     mask = self.map_conv(ft)
     gts = self.box_conv(ft)
