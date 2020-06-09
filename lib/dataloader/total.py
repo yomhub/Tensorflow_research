@@ -47,9 +47,14 @@ class TTText():
       gt_format: string, mask or gtbox
       out_format: string, list or tensor
       nor: normalization coordinate to [0,1]
-
+    Return:
+      ximg: list/tensor
+      y: {
+        'mask':
+        'gt': 
+      }
   """
-  def __init__(self, dir, out_size=[720,1280], gt_format='mask', out_format='list', max_size=2048, nor=True):
+  def __init__(self, dir, out_size=None, gt_format='mask', out_format='list', max_size=2048, nor=True):
     gt_format = gt_format.lower()
     if(gt_format=='mask'):
       self.gt_format = gt_format
@@ -95,7 +100,7 @@ class TTText():
     for mdir in dirs:
       # read image
       tmp = tf.image.decode_image(tf.io.read_file(os.path.join(self.xtraindir,mdir)))
-      coe = [1/tmp.shape[-3],1/tmp.shape[-2]] if(self.nor)else [self.out_size[0]/tmp.shape[-3],self.out_size[1]/tmp.shape[-2]]
+      coe = [1/tmp.shape[-3],1/tmp.shape[-2]] if(self.nor and not(self.out_size))else [self.out_size[0]/tmp.shape[-3],self.out_size[1]/tmp.shape[-2]]
       if(self.out_size): tmp = tf.image.resize(tmp,self.out_size,'nearest')
       if(tmp.shape[-3]>self.max_size[0]):
         tmp = tf.image.resize(tmp,[self.max_size[0],tmp.shape[-2]],'nearest')
@@ -131,7 +136,7 @@ class TTText():
 
     for mdir in dirs:
       tmp = tf.image.decode_image(tf.io.read_file(os.path.join(self.xtestdir,mdir)))
-      coe = [1/tmp.shape[-3],1/tmp.shape[-2]] if(self.nor)else [self.out_size[0]/tmp.shape[-3],self.out_size[1]/tmp.shape[-2]]
+      coe = [1/tmp.shape[-3],1/tmp.shape[-2]] if(self.nor and not(self.out_size))else [self.out_size[0]/tmp.shape[-3],self.out_size[1]/tmp.shape[-2]]
       if(self.out_size): tmp = tf.image.resize(tmp,self.out_size,'nearest')
       if(tmp.shape[-3]>self.max_size[0]):
         tmp = tf.image.resize(tmp,[self.max_size[0],tmp.shape[-2]],'nearest')
