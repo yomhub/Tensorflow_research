@@ -173,8 +173,19 @@ class Unet(tf.keras.Model):
       else:ft = self.rect_dict["l{}_rect".format(i)](ftlist[-1-i])
 
     mask = self.map_conv(ft)
+    # [dcenter_x,dcenter_y,dw,dh]
     gts = self.box_conv(ft)
 
+    det_cx,det_cy = tf.meshgrid(
+      tf.linspace(0.0,1.0,gts.shape[-2]),
+      tf.linspace(0.0,1.0,gts.shape[-3])
+    )
+    gts = tf.stack([
+      gts[:,:,:,0]+det_cx,
+      gts[:,:,:,1]+det_cy,
+      tf.math.exp(gts[:,:,:,2]),
+      tf.math.exp(gts[:,:,:,3]),
+    ],axis=-1)
     self.ft = ft
     return {'mask':mask,'gt':gts,'scr':scr, 'ftlist':ftlist}
 

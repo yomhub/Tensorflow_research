@@ -171,23 +171,21 @@ def visualize_helper(img,gtbox,mask,model):
       module: model with output 
       {}
   """
-  scale_num = 10
-  min_thr = 1/20
-  max_thr = 1/3
-  areas = (gtbox[:,-2]-gtbox[:,-4])*(gtbox[:,-1]-gtbox[:,-3])
-  min_h = tf.reduce_min(gtbox[:,-2]-gtbox[:,-4])
-  min_w = tf.reduce_min(gtbox[:,-1]-gtbox[:,-3])
-  max_h = tf.reduce_max(gtbox[:,-2]-gtbox[:,-4])
-  max_w = tf.reduce_max(gtbox[:,-1]-gtbox[:,-3])
-  if(tf.reduce_max(gtbox)>1.0):
-    min_h/=img.shape[-3]
-    max_h/=img.shape[-3]
-    min_w/=img.shape[-2]
-    max_w/=img.shape[-2]
+  plt.figure(figsize=(8,4))
+  plt.subplot(3,3,3)
+  divnum = 3*3-1
+  if(type(img)!=list):img=[img]
+  if(type(gtbox)!=list):gtbox=[gtbox]
+  if(type(mask)!=list):mask=[mask]
+  for i in range(len(img)):
+    coe_x = int(img.shape[-2]/32)
+    coe_y = int(img.shape[-3]/32)
+    for j in range(divnum):
+      plt.subplot(3,3,divnum+1)
+      plt.title('Img scaler {}/{}'.format(divnum+1,divnum))
 
   # size_list = np.linspace(min_h,1.0-max_h,scale_num).reshape((-1,1))*img.shape[-3:-1]
-  coe_x = int(img.shape[-2]/32)
-  coe_y = int(img.shape[-3]/32)
+
   size_list = np.asarray(range(1,min(coe_x,coe_y),1)).reshape((-1,1))*[32,32]
   # size_list = np.linspace(1,coe_x,scale_num).reshape((-1,1))*[32,32]
   for i in range(len(size_list)):

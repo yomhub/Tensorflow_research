@@ -100,7 +100,10 @@ class TTText():
     for mdir in dirs:
       # read image
       tmp = tf.image.decode_image(tf.io.read_file(os.path.join(self.xtraindir,mdir)))
-      coe = [1/tmp.shape[-3],1/tmp.shape[-2]] if(self.nor and not(self.out_size))else [self.out_size[0]/tmp.shape[-3],self.out_size[1]/tmp.shape[-2]]
+      if(self.nor):coe = [1/tmp.shape[-3],1/tmp.shape[-2]]
+      elif(self.out_size!=None):coe = [self.out_size[0]/tmp.shape[-3],self.out_size[1]/tmp.shape[-2]]
+      else:coe = [1.0,1.0]
+
       if(self.out_size): tmp = tf.image.resize(tmp,self.out_size,'nearest')
       if(tmp.shape[-3]>self.max_size[0]):
         tmp = tf.image.resize(tmp,[self.max_size[0],tmp.shape[-2]],'nearest')
@@ -136,7 +139,10 @@ class TTText():
 
     for mdir in dirs:
       tmp = tf.image.decode_image(tf.io.read_file(os.path.join(self.xtestdir,mdir)))
-      coe = [1/tmp.shape[-3],1/tmp.shape[-2]] if(self.nor and not(self.out_size))else [self.out_size[0]/tmp.shape[-3],self.out_size[1]/tmp.shape[-2]]
+      if(self.nor):coe = [1/tmp.shape[-3],1/tmp.shape[-2]]
+      elif(self.out_size!=None):coe = [self.out_size[0]/tmp.shape[-3],self.out_size[1]/tmp.shape[-2]]
+      else:coe = [1.0,1.0]
+      
       if(self.out_size): tmp = tf.image.resize(tmp,self.out_size,'nearest')
       if(tmp.shape[-3]>self.max_size[0]):
         tmp = tf.image.resize(tmp,[self.max_size[0],tmp.shape[-2]],'nearest')
