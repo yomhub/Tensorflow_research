@@ -63,11 +63,13 @@ def save_image(img, savedir):
     img = tf.reshape(img,img.shape[1:])
   tf.io.write_file(savedir,tf.io.encode_jpeg(tf.cast(img,tf.uint8)))
 
-def plt_draw_lines(funcs,xarry=None,cols=None,fig_size=None,fig_num=None,save_name=None):
+def plt_func_lines(funcs,xarry=None,cols=None,fig_size=None,save_name=None):
   """
-
+  Draw plt by function
+  Args:
+    fig_size: width, height
   """
-  plt.figure(num=fig_num,figsize=fig_size)
+  plt.figure(figsize=fig_size)
   if(xarry==None):
     xarry=np.range(-5.0,5.0,100)
   if(type(funcs)!=list):
@@ -80,8 +82,46 @@ def plt_draw_lines(funcs,xarry=None,cols=None,fig_size=None,fig_num=None,save_na
     '','--','-.','--.',':'
   ]
   for i in range(len(funcs)):
-    plt.plot(xarry,funcs[i],tcols[i],linewidth=1.0,linestyle=line_sty[i])
-  plt.show()
+    plt.plot(xarry,funcs[i](xarry),tcols[i],linewidth=1.0,linestyle=line_sty[i])
+  plt.savefig(save_name if(save_name!=None)else 'plt_img.jpg')
+
+def plt_points_lines(points,xarry=None,xcfg=None,fig_size=None,save_name=None):
+  """
+  Draw plt by function
+  Args:
+    points: 
+      1D array (Ny,) with [y0,y1...]: 
+        if xarry is [x0,x1...], use xarry.
+        Or calculate xarry by xcfg
+      2D array (2,Nyx) with [[y0,y1...],[x0,x1...]]
+      List of 1D/2D arrays: 
+        draw multi lines in figure
+    xarry:
+      1D array (Nx,) with [x0,x1...]
+    xcfg:
+      if points is 1D and xarry==None, (start,end) will be use
+    
+  """
+  plt.figure(figsize=fig_size)
+  if(type(points)!=list):
+    points = [points]
+  tcols = [
+    'Greys', 'Purples', 'Blues', 'Greens', 'Oranges', 'Reds',
+    'YlOrBr', 'YlOrRd', 'OrRd', 'PuRd', 'RdPu', 'BuPu',
+    'GnBu', 'PuBu', 'YlGnBu', 'PuBuGn', 'BuGn', 'YlGn']
+  line_sty = [
+    '','--','-.','--.',':'
+  ]
+  for i in range(len(points)):
+    if(len(points[i].shape)==1):
+      if(xarry!=None and xarry.shape[0]==points[i].shape[0]): xs = xarry
+      elif(xcfg!=None): xs = np.linspace(xcfg[0],xcfg[1],points[i].shape[0])
+      ys = points[i]
+    else:
+      xs = points[i][1]
+      ys = points[i][0]
+    plt.plot(xs,ys,tcols[i%len(tcols)],linewidth=1.0,linestyle=line_sty[i%len(line_sty)])
+  plt.savefig(save_name if(save_name!=None)else 'plt_img.jpg')
 
 def rf_helper(net_list,ord_len,panding=True):
   """
