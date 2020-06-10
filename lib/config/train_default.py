@@ -8,9 +8,13 @@ import sys
 cfg = {}
 
 __DEF_SIZE = 0
-cfg['IMG_SIZE'] = [[1280, 720], [int(1280/2), int(720/2)], [640, 640]][__DEF_SIZE]
+cfg['IMG_SIZE'] = [
+  [1280, 720], [int(32*40), int(32*23)], 
+  [int(1280/2), int(720/2)], 
+  [640, 640]
+  ][0]
 
-cfg['STEP'] = [50*10,50*5][0]
+cfg['STEP'] = [100*10,100*5,50*5][0]
 cfg['BATCH'] = 5
 cfg['LOGSTP'] = 10
 
