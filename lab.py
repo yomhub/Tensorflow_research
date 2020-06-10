@@ -11,7 +11,7 @@ from lib.frcnn_trainer import FRCNNTrainer
 from lib.unet_trainer import UnetTrainer
 from lib.tflib.bbox_transform import *
 from lib.tflib.evaluate_tools import *
-from lib.tflib.log_tools import auto_image,save_image,rf_helper,visualize_helper
+from lib.tflib.log_tools import auto_image,save_image,rf_helper,resize_visualize_helper,sequence_visualize_helper
 from lib.dataloader.total import TTText
 
 # 
@@ -198,20 +198,26 @@ def draw_dataset():
 if __name__ == "__main__":
   print(tf.__version__)
   sv_dir = os.path.join(__DEF_LOCAL_DIR,'save_model','unet','model')
-
+  fol_dir = "D:\\workspace\\TensorFlow\\FasterRCNN\\mydataset\\TextVideo\\far2near\\2"
+  sec_dir = os.listdir(fol_dir)
   m2 = Unet(std=False)
 
   m2.load_weights(sv_dir)
+  imgs = []
+  for o in sec_dir:
+    tmp = tf.image.decode_image(tf.io.read_file(os.path.join(fol_dir,o)))
+    tmp = tf.reshape(tf.cast(tmp,tf.float32),[1]+tmp.shape)
+    imgs += [tmp]
+  # dt = TTText(__DEF_TTT_DIR,None)
+  # x_t,y_t = dt.read_train_batch(2)
+  # gts = []
+  # mask = []
 
-  dt = TTText(__DEF_TTT_DIR,None)
-  x_t,y_t = dt.read_train_batch(2)
-  gts = []
-  mask = []
-  for o in y_t:
-    gts += [o['gt']]
-    mask += [o['mask']]
-  # fr = tf.summary.create_file_writer(os.path.join(__DEF_LOCAL_DIR,'log','unet_test'))
-  # fr.set_as_default()
+  # for o in y_t:
+  #   gts += [o['gt']]
+  #   mask += [o['mask']]
+  fr = tf.summary.create_file_writer(os.path.join(__DEF_LOCAL_DIR,'log','unet_test'))
+  fr.set_as_default()
   # img = tf.reshape(tf.cast(x_t[1],tf.float32),[1]+x_t[1].shape[-3:])
-  visualize_helper(x_t,gts,mask,m2)
+  sequence_visualize_helper(imgs,m2)
   print('end')

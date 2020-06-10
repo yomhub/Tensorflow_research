@@ -41,6 +41,7 @@ class UnetTrainer(Trainer):
     auto_scalar(self.loss.cur_loss['mask'],step,"Loss/Mask loss")
     auto_scalar(self.loss.cur_loss['box'],step,"Loss/Box loss")
     auto_scalar(self.loss.cur_loss['score'],step,"Loss/Score loss")
+    if(tf.math.is_nan(loss_value)):return -1
     
     if(self.log_ft):
       auto_scalar(tf.reduce_mean(self.model.ft),step,"FT/ft mean")
