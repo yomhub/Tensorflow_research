@@ -183,8 +183,8 @@ class Unet(tf.keras.Model):
     gts = tf.stack([
       gts[:,:,:,0]+det_cx,
       gts[:,:,:,1]+det_cy,
-      tf.math.exp(gts[:,:,:,2]),
-      tf.math.exp(gts[:,:,:,3]),
+      gts[:,:,:,2],
+      gts[:,:,:,3],
     ],axis=-1)
     self.ft = ft
     return {'mask':mask,'gt':gts,'scr':scr, 'ftlist':ftlist}
