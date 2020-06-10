@@ -27,17 +27,16 @@ def txt_helper(fname,dtype=int,img_resize_coe=None):
   with open(fname,'r') as f:
     tmp = f.readlines()
     tmp = [o.split(', ') for o in tmp]
-    try:
-      for l in tmp: 
-        xs = [dt(o) for o in l[0].split('[[')[-1].split(']]')[0].split()]
-        ys = [dt(o) for o in l[1].split('[[')[-1].split(']]')[0].split()]
-        if(img_resize_coe!=None):
-          boxs.append([dt(1), min(ys)*img_resize_coe[0], min(xs)*img_resize_coe[1],
-            max(ys)*img_resize_coe[0], max(xs)*img_resize_coe[1]])
-        else:
-          boxs.append([dt(1), min(ys), min(xs),max(ys), max(xs)])
-    except:
-      raise RuntimeError('Read err at {} \nin {}\nin {}'.format(fname,tmp,l))
+
+    for l in tmp: 
+      xs = [dt(o) for o in l[0].split('[[')[-1].split(']]')[0].split()]
+      ys = [dt(o) for o in l[1].split('[[')[-1].split(']]')[0].split()]
+      if(img_resize_coe!=None):
+        boxs.append([dt(1), min(ys)*img_resize_coe[0], min(xs)*img_resize_coe[1],
+          max(ys)*img_resize_coe[0], max(xs)*img_resize_coe[1]])
+      else:
+        boxs.append([dt(1), min(ys), min(xs),max(ys), max(xs)])
+
   return tf.convert_to_tensor(boxs)
 
 class TTText():
@@ -98,6 +97,13 @@ class TTText():
     boxs = []
     dirs = (img_names[slice_a] + img_names[slice_b]) if(slice_b)else img_names[slice_a]
     for mdir in dirs:
+      try: 
+        gt = txt_helper(os.path.join(self.txttraindir,'poly_gt_'+os.path.splitext(mdir)[0]+'.txt'),float,coe)
+      except:
+        dirs.append(img_names[cur_conter])
+        cur_conter = cur_conter+1 if((cur_conter+1)<self.total_train)else 0
+        print('Read err at {}.'.format(os.path.join(self.txttraindir,'poly_gt_'+os.path.splitext(mdir)[0]+'.txt')))
+        continue
       # read image
       tmp = tf.image.decode_image(tf.io.read_file(os.path.join(self.xtraindir,mdir)))
       if(self.nor):coe = [1/tmp.shape[-3],1/tmp.shape[-2]]
@@ -110,6 +116,7 @@ class TTText():
       if(tmp.shape[-2]>self.max_size[1]):
         tmp = tf.image.resize(tmp,[tmp.shape[-3],self.max_size[1]],'nearest')
       img_list.append(tf.reshape(tmp,[1]+tmp.shape))
+
       # read mask
       tmp = tf.image.decode_image(tf.io.read_file(os.path.join(self.pixeltraindir,mdir)))
       if(self.out_size): tmp = tf.image.resize(tmp,self.out_size,'nearest')
@@ -117,9 +124,10 @@ class TTText():
         tmp = tf.image.resize(tmp,[self.max_size[0],tmp.shape[-2]],'nearest')
       if(tmp.shape[-2]>self.max_size[1]):
         tmp = tf.image.resize(tmp,[tmp.shape[-3],self.max_size[1]],'nearest')
+
       y_list.append({
         'mask':tmp,
-        'gt':txt_helper(os.path.join(self.txttraindir,'poly_gt_'+os.path.splitext(mdir)[0]+'.txt'),float,coe),
+        'gt':gt,
         })
 
 
@@ -138,6 +146,13 @@ class TTText():
     dirs = (img_names[slice_a] + img_names[slice_b]) if(slice_b)else img_names[slice_a]
 
     for mdir in dirs:
+      try: 
+        gt = txt_helper(os.path.join(self.txttestdir,'poly_gt_'+os.path.splitext(mdir)[0]+'.txt'),float,coe)
+      except:
+        dirs.append(img_names[cur_conter])
+        cur_conter = cur_conter+1 if((cur_conter+1)<self.total_train)else 0
+        print('Read err at {}.'.format(os.path.join(self.txttestdir,'poly_gt_'+os.path.splitext(mdir)[0]+'.txt')))
+        continue
       tmp = tf.image.decode_image(tf.io.read_file(os.path.join(self.xtestdir,mdir)))
       if(self.nor):coe = [1/tmp.shape[-3],1/tmp.shape[-2]]
       elif(self.out_size!=None):coe = [self.out_size[0]/tmp.shape[-3],self.out_size[1]/tmp.shape[-2]]
@@ -156,9 +171,10 @@ class TTText():
         tmp = tf.image.resize(tmp,[self.max_size[0],tmp.shape[-2]],'nearest')
       if(tmp.shape[-2]>self.max_size[1]):
         tmp = tf.image.resize(tmp,[tmp.shape[-3],self.max_size[1]],'nearest')
+
       y_list.append({
         'mask':tmp,
-        'gt':txt_helper(os.path.join(self.txttestdir,'poly_gt_'+os.path.splitext(mdir)[0]+'.txt'),float,coe),
+        'gt':gt,
         })
 
     if(self.out_format=='tensor'):
