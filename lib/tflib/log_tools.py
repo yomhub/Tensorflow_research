@@ -10,9 +10,7 @@ __DEF_LINE_STY = [
     'dashed',   # __ __ __
   ]
 __DEF_COLORS = [
-    'Greys', 'Purples', 'Blues', 'Greens', 'Oranges', 'Reds',
-    'YlOrBr', 'YlOrRd', 'OrRd', 'PuRd', 'RdPu', 'BuPu',
-    'GnBu', 'PuBu', 'YlGnBu', 'PuBuGn', 'BuGn', 'YlGn']
+  'r','b','g','c','y','m']
 
 def str2time(instr):
   ymd,hms=instr.split('-')
@@ -181,22 +179,33 @@ def visualize_helper(img,gtbox,mask,model):
   """
 
   linewidth = 1.3
-  fg = plt.figure(figsize=(8,4))
-  fg.subplot(3,3,3)
+  plt.figure(figsize=(8,4))
+  # fg = plt.figure(figsize=(8,4))
+  plt.subplot(3,3,1,
+  # figure=fg
+  )
   divnum = 3*3-1
   base_scale = 32 # vgg net based scale
   if(type(img)!=list):img=[img]
   if(type(gtbox)!=list):gtbox=[gtbox]
   if(type(mask)!=list):mask=[mask]
   for j in range(divnum):
-    fg.subplot(3,3,j+1)
-    fg.xlabel('layer')
-    fg.ylabel('energy')
-    fg.title('Scaler {}/{}'.format(j+1,divnum))
-  dx = None
+    plt.subplot(3,3,j+1,
+      # figure=fg
+    )
+    plt.xlabel('layer',
+      # figure=fg
+    )
+    plt.ylabel('energy',
+    # figure=fg
+    )
+    plt.title('Scaler {}/{}'.format(j+1,divnum),
+    # figure=fg
+    )
+  dx=np.arange(5)
   for i in range(len(img)):
-    coe_x = int(max(int(img.shape[-2]/base_scale),divnum)/divnum)
-    coe_y = int(max(int(img.shape[-3]/base_scale),divnum)/divnum)
+    coe_x = int(max(int(img[i].shape[-2]/base_scale),divnum)/divnum)
+    coe_y = int(max(int(img[i].shape[-3]/base_scale),divnum)/divnum)
     
     for j in range(divnum):
       img_size = [coe_y*base_scale,coe_x*base_scale]
@@ -210,7 +219,7 @@ def visualize_helper(img,gtbox,mask,model):
         name = 'Score|Img image size {}.'.format(img_size),
         data = mp,step=0)
 
-      if(dx==None):dx=np.arange(len(rt['ftlist']))
+      # if(dx==None):dx=np.arange(len(rt['ftlist']))
       dmin = []
       dmean = []
       dmax = []
@@ -223,20 +232,31 @@ def visualize_helper(img,gtbox,mask,model):
       dmean = np.asarray(dmean)
       dmax = np.asarray(dmax)
 
-      fg.subplot(3,3,j+1)
-      fg.plot(dx,dmean,
+      plt.subplot(3,3,j+1,
+        # figure=fg
+      )
+      plt.plot(dx,dmean,
         color=__DEF_COLORS[i%len(__DEF_COLORS)],
         linewidth=linewidth,
         linestyle=__DEF_LINE_STY[0],
-        label='mean')
-      fg.plot(dx,dmin,
+        label='mean',
+        # figure=fg
+        )
+      plt.plot(dx,dmin,
         color=__DEF_COLORS[i%len(__DEF_COLORS)],
         linewidth=linewidth,
         linestyle=__DEF_LINE_STY[1],
-        label='min')
-      fg.plot(dx,dmax,
+        label='min',
+        # figure=fg
+        )
+      plt.plot(dx,dmax,
         color=__DEF_COLORS[i%len(__DEF_COLORS)],
         linewidth=linewidth,
         linestyle=__DEF_LINE_STY[2],
-        label='max')
-fg.savefig('logfig.jpg')
+        label='max',
+        # figure=fg
+        )
+  plt.show()
+  # plt.savefig('logfig.png')
+  # fg.show()
+  print("")

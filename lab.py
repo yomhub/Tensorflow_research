@@ -197,16 +197,21 @@ def draw_dataset():
 
 if __name__ == "__main__":
   print(tf.__version__)
-  sv_dir = os.path.join(__DEF_LOCAL_DIR,'save_model','Unet_with_sgd','20200608-164713','model')
+  sv_dir = os.path.join(__DEF_LOCAL_DIR,'save_model','unet','model')
 
   m2 = Unet(std=False)
-  m2(tf.zeros((1,200,400,3)))
-  # m2.load_weights(sv_dir)
 
-  # dt = TTText(__DEF_TTT_DIR,None)
-  # x_t,y_t = dt.read_train_batch(2)
+  m2.load_weights(sv_dir)
+
+  dt = TTText(__DEF_TTT_DIR,None)
+  x_t,y_t = dt.read_train_batch(2)
+  gts = []
+  mask = []
+  for o in y_t:
+    gts += [o['gt']]
+    mask += [o['mask']]
   # fr = tf.summary.create_file_writer(os.path.join(__DEF_LOCAL_DIR,'log','unet_test'))
   # fr.set_as_default()
   # img = tf.reshape(tf.cast(x_t[1],tf.float32),[1]+x_t[1].shape[-3:])
-  # visualize_helper(img,y_t[1]['gt'],y_t[1]['mask'],m2)
+  visualize_helper(x_t,gts,mask,m2)
   print('end')
