@@ -1,7 +1,10 @@
 import tensorflow as tf
 import numpy as np
 import matplotlib.pyplot as plt
+from matplotlib import colors as mcolors
+from matplotlib.collections import PolyCollection
 from datetime import datetime
+from mpl_toolkits.mplot3d import Axes3D
 
 __DEF_LINE_STY = [
     'solid',    # _____
@@ -167,9 +170,9 @@ def rf_helper(net_list,ord_len,panding=True):
     cod_table.append(tmp)
   return rf_st,cod_table
 
-def visualize_helper(img,gtbox,mask,model):
+def resize_visualize_helper(img,model,gtbox=None,mask=None):
   """
-    Helper for feature part in unet.
+    Helper for feature part in unet in resize task.
     Args:
       img: input image
       gtbox: (N,4) with [y1,x1,y2,x2] in [0,1]
@@ -187,8 +190,8 @@ def visualize_helper(img,gtbox,mask,model):
   divnum = 3*3-1
   base_scale = 32 # vgg net based scale
   if(type(img)!=list):img=[img]
-  if(type(gtbox)!=list):gtbox=[gtbox]
-  if(type(mask)!=list):mask=[mask]
+  if(gtbox!=None and type(gtbox)!=list):gtbox=[gtbox]
+  if(mask!=None and type(mask)!=list):mask=[mask]
   for j in range(divnum):
     plt.subplot(3,3,j+1,
       # figure=fg
@@ -257,6 +260,121 @@ def visualize_helper(img,gtbox,mask,model):
         # figure=fg
         )
   plt.show()
+  plt.savefig('logfig.png')
+  # fg.show()
+  print("")
+
+def sequence_visualize_helper(img,model,gtbox=None,mask=None):
+  """
+    Helper for feature part in unet in sequence task.
+    Args:
+      img: list of image sequence
+      gtbox: (N,4) with [y1,x1,y2,x2] in [0,1]
+      mask: pixel mask
+      module: model with output 
+      {}
+  """
+  def polygon_under_graph(xlist, ylist):
+    '''
+    Construct the vertex list which defines the polygon filling the space under
+    the (xlist, ylist) line graph.  Assumes the xs are in ascending order.
+    '''
+    return [(xlist[0], 0.)] + list(zip(xlist, ylist)) + [(xlist[-1], 0.)]
+  def cc(arg):
+    '''
+    Shorthand to convert 'named' colors to rgba format at 60% opacity.
+    '''
+    return mcolors.to_rgba(arg, alpha=0.6)
+  fig_min = plt.figure(num='min')
+  fig_max = plt.figure(num='max')
+  fig_mean = plt.figure(num='mean')
+  # mean, min, max
+  ax_min = fig_min.gca(projection='3d')
+  ax_max = fig_max.gca(projection='3d')
+  ax_mean = fig_mean.gca(projection='3d')
+  # ax1 = fig.add_subplot(1,3,1,projection='3d')
+  # ax2 = fig.add_subplot(1,3,2,projection='3d')
+  # ax3 = fig.add_subplot(1,3,3,projection='3d')
+  linewidth = 1.3
+
+  if(type(img)!=list):img=[img]
+  if(gtbox!=None and type(gtbox)!=list):gtbox=[gtbox]
+  if(mask!=None and type(mask)!=list):mask=[mask]
+
+  dmin = []
+  dmean = []
+  dmax = []
+  for i in range(len(img)):
+    rt = model(img[i])
+    mp = tf.cast(rt['scr'][:,:,:,1]>rt['scr'][:,:,:,0],tf.float32)
+    mp = tf.reshape(mp,mp.shape+[1])
+    mp = tf.broadcast_to(mp,mp.shape[:-1]+[3])
+    mp = tf.concat([mp,tf.image.resize(img[i],mp.shape[-3:-1])/255.0],axis=2)
+    tf.summary.image(
+      name = 'Score|Img image.',
+      data = mp,step = i,
+      max_outputs=20
+      )
+    tf.keras.preprocessing.image.save_img(
+      path='fg{}.jpg'.format(i),
+      x=tf.reshape(mp,mp.shape[1:]).numpy(),
+      # scale=False,
+    )
+    tmp_dmin = []
+    tmp_dmax = []
+    tmp_dmean = []
+    for j in range(len(rt['ftlist'])):  
+      tmp_dmin += [tf.reduce_min(rt['ftlist'][j]).numpy()]
+      tmp_dmax += [tf.reduce_max(rt['ftlist'][j]).numpy()]
+      tmp_dmean += [tf.reduce_mean(rt['ftlist'][j]).numpy()]
+    dmin += [tmp_dmin]
+    dmax += [tmp_dmax]
+    dmean += [tmp_dmean]
+
+  # convert d[img][layer] to d[layer][img]
+  dmin = np.asarray(dmin).transpose((1,0))
+  dmax = np.asarray(dmax).transpose((1,0))
+  dmean = np.asarray(dmean).transpose((1,0))
+
+  zs = range(dmin.shape[0]) # layers num
+  xs = np.arange(len(img))
+  verts_min = []
+  verts_max = []
+  verts_mean = []
+  cols = []
+  for i in zs:
+    verts_min.append(polygon_under_graph(xs,dmin[i]))
+    verts_max.append(polygon_under_graph(xs,dmax[i]))
+    verts_mean.append(polygon_under_graph(xs,dmean[i]))
+    cols += [cc(__DEF_COLORS[i%len(__DEF_COLORS)])] 
+
+  poly_min = PolyCollection(verts_min, facecolors=cols)
+  poly_max = PolyCollection(verts_max, facecolors=cols)
+  poly_mean = PolyCollection(verts_mean, facecolors=cols)
+  
+  ax_min.add_collection3d(poly_min, zs=zs, zdir='y')
+  ax_min.set_xlabel('Images')
+  ax_min.set_xlim(0, len(img))
+  ax_min.set_ylabel('Layers')
+  ax_min.set_ylim(0, dmin.shape[0])
+  ax_min.set_zlabel('Mean')
+  ax_min.set_zlim(dmin.min()-1.0, dmin.max()+1.0)
+  ax_max.add_collection3d(poly_max, zs=zs, zdir='y')
+  ax_max.set_xlabel('Images')
+  ax_max.set_xlim(0, len(img))
+  ax_max.set_ylabel('Layers')
+  ax_max.set_ylim(0, dmin.shape[0])
+  ax_max.set_zlabel('Max')
+  ax_max.set_zlim(dmax.min()-1.0, dmax.max()+1.0)
+  ax_mean.add_collection3d(poly_mean, zs=zs, zdir='y')
+  ax_mean.set_xlabel('Images')
+  ax_mean.set_xlim(0, len(img))
+  ax_mean.set_ylabel('Layers')
+  ax_mean.set_ylim(0, dmin.shape[0])
+  ax_mean.set_zlabel('Mean')
+  ax_mean.set_zlim(dmean.min()-1.0, dmean.max()+1.0)
+
+  # plt.show()
   # plt.savefig('logfig.png')
   # fg.show()
   print("")
