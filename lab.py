@@ -197,7 +197,7 @@ def draw_dataset():
 
 if __name__ == "__main__":
   print(tf.__version__)
-  sv_dir = os.path.join(__DEF_LOCAL_DIR,'save_model','unet','model')
+  sv_dir = os.path.join(__DEF_LOCAL_DIR,'save_model','unet','20200611-003316','model')
   fol_dir = "D:\\workspace\\TensorFlow\\FasterRCNN\\mydataset\\TextVideo\\far2near\\2"
   sec_dir = os.listdir(fol_dir)
   m2 = Unet(std=False)

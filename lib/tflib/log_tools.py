@@ -309,9 +309,13 @@ def sequence_visualize_helper(img,model,gtbox=None,mask=None):
     mp = tf.cast(rt['scr'][:,:,:,1]>rt['scr'][:,:,:,0],tf.float32)
     mp = tf.reshape(mp,mp.shape+[1])
     mp = tf.broadcast_to(mp,mp.shape[:-1]+[3])
-    mp = tf.concat([mp,tf.image.resize(img[i],mp.shape[-3:-1])/255.0],axis=2)
+    mp = tf.concat([
+      mp,
+      # tf.broadcast_to(rt['mask'],rt['mask'].shape[:-1]+[3]),
+      tf.image.resize(img[i],mp.shape[-3:-1])/255.0],
+      axis=2)
     tf.summary.image(
-      name = 'Score|Img image.',
+      name = 'Score|Edg|Img image.',
       data = mp,step = i,
       max_outputs=20
       )
