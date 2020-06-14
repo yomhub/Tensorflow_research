@@ -12,6 +12,11 @@ Link dataset folder to prooject root:
 ln -s ${ds_root} ${pj_root}/mydataset
 ```
 
+Install conda environment
+```
+conda create --name <env> --file conda_env.txt
+```
+
 ## Prerequisites
  (Only tested on) Ubuntu 16.04 and windows with:
 * tensorflow-gpu >= 2.1    
